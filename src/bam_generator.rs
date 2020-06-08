@@ -238,6 +238,7 @@ impl NamedBamReader for StreamingNamedBamReader {
     }
 
     fn finish(self) {
+        debug!("Finishing NamedBamReader...");
         complete_processes(
             self.processes,
             self.command_strings,
