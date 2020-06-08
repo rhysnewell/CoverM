@@ -201,7 +201,7 @@ pub fn contig_coverage<R: NamedBamReader,
                    - perhaps something went wrong in the mapping?",
                   stoit_name);
         }
-
+        bam_generated.complete();
         bam_generated.finish();
     }
     return reads_mapped_vector;

@@ -440,6 +440,9 @@ impl NamedBamReader for ShardedBamReader {
     fn header(&self) -> &bam::HeaderView {
         &self.bam_reader.header()
     }
+
+    fn complete(&self) {}
+
     fn finish(self) {
         complete_processes(
             vec![self.sort_process],
@@ -619,8 +622,8 @@ pub fn generate_named_sharded_bam_readers_from_reads(
                 fifo_path,
                 upstream_error);
             complete_processes(
-                processes, 
-                command_strings, 
+                processes,
+                command_strings,
                 log_descriptions,
                 log_files,
                 Some(tmp_dir)
