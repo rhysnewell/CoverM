@@ -175,7 +175,7 @@ pub fn complete_processes(
     for mut process in processes {
         debug!("Finishing Process...");
         let es = process.wait().expect("Failed to glean exitstatus from mapping process");
-        debug!("Complete! Successful: {}", !es.successs());
+        debug!("Complete! Successful: {}", !es.success());
         let failed = !es.success();
         if failed || log_enabled!(log::Level::Debug) {
             if failed {
@@ -785,7 +785,7 @@ impl NamedBamMaker {
     pub fn complete(&self) {}
 
     pub fn finish(self) {
-        debug!("Finishing NamedBamMaker. Tempdir is {:?}", self.tempdir.path());
+        debug!("Finishing NamedBamMaker...");
         complete_processes(
             self.processes,
             self.command_strings,
