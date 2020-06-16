@@ -1,7 +1,7 @@
 - [CoverM](#coverm)
 	- [Installation](#installation)
-		- [Pre-compiled binary](#pre-compiled-binary)
 		- [Install through the bioconda package](#install-through-the-bioconda-package)
+		- [Pre-compiled binary](#pre-compiled-binary)
 		- [Compiling from source](#compiling-from-source)
 		- [Development version](#development-version)
 		- [Dependencies](#dependencies)
@@ -12,7 +12,7 @@
 
 # CoverM
 
-[![Travis](https://img.shields.io/travis/wwood/CoverM.svg?style=flat-square)](https://travis-ci.org/wwood/CoverM)
+[![Travis](https://api.travis-ci.org/wwood/CoverM.svg?branch=master)](https://travis-ci.org/wwood/CoverM) [![Anaconda-Server Badge](https://anaconda.org/bioconda/coverm/badges/installer/conda.svg)](https://conda.anaconda.org/bioconda)
 
 CoverM aims to be a configurable, easy to use and fast DNA read coverage and
 relative abundance calculator focused on metagenomics applications.
@@ -24,11 +24,6 @@ sequences.
 
 ## Installation
 
-### Pre-compiled binary
-
-To install CoverM, the most straightforward way is to download the statically
-compiled binaries available on the [releases page](https://github.com/wwood/CoverM/releases).
-
 ### Install through the bioconda package
 
 CoverM can be installed through the [bioconda](https://bioconda.github.io/user/install.html) conda channel. After initial setup of conda and the bioconda channel, it can be installed with
@@ -36,6 +31,11 @@ CoverM can be installed through the [bioconda](https://bioconda.github.io/user/i
 ```
 conda install coverm
 ```
+
+### Pre-compiled binary
+
+Statically compiled CoverM binaries available on the [releases page](https://github.com/wwood/CoverM/releases).
+This installation method requires non-Rust dependencies to be installed separately - see the [dependencies section](#Dependencies).
 
 ### Compiling from source
 
@@ -69,6 +69,8 @@ For the full suite of options, these additional programs must be installed:
 * [samtools](https://github.com/samtools/samtools) >1.0 (tested with v1.9)
 * [tee](https://www.gnu.org/software/coreutils/), which is installed by default
   on most Linux operating systems.
+* [man](http://man-db.nongnu.org/), which is installed by default on most Linux
+  operating systems.
 
 and some mapping software:
 * [minimap2](https://github.com/lh3/minimap2)
@@ -108,7 +110,7 @@ For more detailed usage see `coverm <command> -h` or `coverm <command> --full-he
 
 ## Calculation methods
 
-The `-m/--methods` flag specified the specific kind(s) of coverage that are
+The `-m/--methods` flag specifies the specific kind(s) of coverage that are
 to be calculated.
 
 To illustrate, imagine a set of 3 pairs of reads, where only 1 aligns to a
