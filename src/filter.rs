@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::process;
-use std::rc::Rc;
+use std::sync::Arc;
 use std::str;
 
 use FlagFilter;
@@ -11,7 +11,7 @@ use rust_htslib::bam::record::Cigar;
 use rust_htslib::bam::Read;
 
 pub struct ReferenceSortedBamFilter {
-    first_set: BTreeMap<Rc<String>, Rc<bam::Record>>,
+    first_set: BTreeMap<Arc<String>, Arc<bam::Record>>,
     current_reference: i32,
     known_next_read: Option<bam::Record>,
     pub reader: bam::Reader,
@@ -168,7 +168,7 @@ impl ReferenceSortedBamFilter {
                                 // if tlen is +ve and < threshold
                                 // add to first read set
                                 self.first_set
-                                    .insert(Rc::new(qname), Rc::new(record.clone()));
+                                    .insert(Arc::new(qname), Arc::new(record.clone()));
                             // continue the loop without returning as we need to see the second record
                             }
                             // pairs from different contigs are ignored.
@@ -209,7 +209,7 @@ impl ReferenceSortedBamFilter {
                                 debug!("Read pair passed QC");
                                 self.known_next_read = Some(record.clone());
                                 record.clone_from(
-                                    &Rc::try_unwrap(record1).expect("Cannot get strong RC pointer"),
+                                    &Arc::try_unwrap(record1).expect("Cannot get strong RC pointer"),
                                 );
                                 debug!("Returning..");
                                 return Ok(true);
