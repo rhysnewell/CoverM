@@ -712,15 +712,16 @@ fn dereplicate(m: &clap::ArgMatches, genome_fasta_files: &Vec<String>) -> Vec<St
         "Found {} genomes specified before dereplication",
         genome_fasta_files.len()
     );
+
     // Generate clusterer and check for dependencies
     let clusterer = galah::cluster_argument_parsing::generate_galah_clusterer(
         genome_fasta_files,
         &m,
         &galah_command_line_definition(),
-    )
-    .expect("Failed to parse galah clustering arguments correctly");
+    ).expect("Failed to parse galah clustering arguments correctly");
+    galah::external_command_checker::check_for_dependencies();
+    info!("Dereplicating genome at {}% ANI ..", clusterer.ani*100.);
 
-    info!("Dereplicating genome at {}% ANI ..", clusterer.ani * 100.);
     let cluster_indices = clusterer.cluster();
     info!(
         "Finished dereplication, finding {} representative genomes.",

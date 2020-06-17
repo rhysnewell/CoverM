@@ -479,6 +479,9 @@ impl NamedBamReader for ShardedBamReader {
     fn header(&self) -> &bam::HeaderView {
         &self.bam_reader.header()
     }
+
+    fn complete(&self) {}
+
     fn finish(self) {
         complete_processes(
             vec![self.sort_process],

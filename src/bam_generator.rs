@@ -28,6 +28,8 @@ pub trait NamedBamReader {
     // Return the bam header of the final BAM file
     fn header(&self) -> &bam::HeaderView;
 
+    fn complete(&self);
+
     fn finish(self);
 
     //set the number of threads for Bam reading
@@ -72,6 +74,9 @@ impl NamedBamReader for BamFileNamedReader {
     fn header(&self) -> &bam::HeaderView {
         self.bam_reader.header()
     }
+
+    fn complete(&self) {}
+
     fn finish(self) {}
 
     fn set_threads(&mut self, n_threads: usize) {
@@ -169,6 +174,7 @@ pub fn complete_processes(
         let es = process
             .wait()
             .expect("Failed to glean exitstatus from mapping process");
+
         let failed = !es.success();
         if failed || log_enabled!(log::Level::Debug) {
             if failed {
@@ -226,7 +232,13 @@ impl NamedBamReader for StreamingNamedBamReader {
     fn header(&self) -> &bam::HeaderView {
         self.bam_reader.header()
     }
+
+    fn complete(&self) {
+
+    }
+
     fn finish(self) {
+        debug!("Finishing NamedBamReader...");
         complete_processes(
             self.processes,
             self.command_strings,
@@ -423,6 +435,9 @@ impl NamedBamReader for FilteredBamReader {
     fn header(&self) -> &bam::HeaderView {
         &self.filtered_stream.reader.header()
     }
+
+    fn complete(&self) {}
+
     fn finish(self) {}
     fn set_threads(&mut self, n_threads: usize) {
         if n_threads > 1 {
@@ -577,6 +592,11 @@ impl NamedBamReader for StreamingFilteredNamedBamReader {
     fn header(&self) -> &bam::HeaderView {
         self.filtered_stream.reader.header()
     }
+
+    fn complete(&self) {
+
+    }
+
     fn finish(self) {
         debug!(
             "Finishing StreamingFilteredNamedBamReader. Tempdir is {:?}",
@@ -809,7 +829,11 @@ impl NamedBamMaker {
     pub fn name(&self) -> &str {
         &(self.stoit_name)
     }
+
+    pub fn complete(&self) {}
+
     pub fn finish(self) {
+        debug!("Finishing NamedBamMaker...");
         complete_processes(
             self.processes,
             self.command_strings,

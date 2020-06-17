@@ -235,7 +235,7 @@ pub fn contig_coverage<R: NamedBamReader, G: NamedBamReaderGenerator<R>, T: Cove
                 stoit_name
             );
         }
-
+        bam_generated.complete();
         bam_generated.finish();
     }
     return reads_mapped_vector;
