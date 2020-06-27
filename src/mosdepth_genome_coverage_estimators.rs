@@ -403,14 +403,8 @@ impl MosdepthGenomeCoverageEstimator for CoverageEstimator {
                 let mut cumulative_sum: i32 = 0;
                 let start_from = *contig_end_exclusion as usize;
                 let end_at = len1 - *contig_end_exclusion as usize - 1;
-                debug!("ups and downs {:?}", ups_and_downs);
                 for (i, current) in ups_and_downs.iter().enumerate() {
-                    if *current != 0 {
-                        debug!(
-                            "At i {}, cumulative sum {} and current {}",
-                            i, cumulative_sum, current
-                        );
-                    }
+
                     cumulative_sum += current;
                     if i >= start_from && i <= end_at {
                         if cumulative_sum > 0 {
@@ -550,25 +544,17 @@ impl MosdepthGenomeCoverageEstimator for CoverageEstimator {
                             let mut i = 0;
                             for num_covered in counts.iter() {
                                 num_accounted_for += *num_covered as usize;
-                                debug!(
-                                    "start: i {}, num_accounted_for {}, total {}, min {}, max {}",
-                                    i, num_accounted_for, total, min_index, max_index
-                                );
+
                                 if num_accounted_for >= min_index {
-                                    debug!("inside");
                                     if started {
                                         if num_accounted_for > max_index {
-                                            debug!(
-                                                "num_accounted_for {}, *num_covered {}",
-                                                num_accounted_for, *num_covered
-                                            );
+
                                             let num_excess =
                                                 num_accounted_for - *num_covered as usize;
                                             let num_wanted = match max_index >= num_excess {
                                                 true => max_index - num_excess + 1,
                                                 false => 0,
                                             };
-                                            debug!("num wanted1: {}", num_wanted);
                                             total += num_wanted * i;
                                             break;
                                         } else {
@@ -580,19 +566,13 @@ impl MosdepthGenomeCoverageEstimator for CoverageEstimator {
                                             total = (max_index - min_index + 1) * i;
                                             started = true
                                         } else if num_accounted_for < min_index {
-                                            debug!("too few on first")
                                         } else {
                                             let num_wanted = num_accounted_for - min_index + 1;
-                                            debug!("num wanted2: {}", num_wanted);
                                             total = num_wanted * i;
                                             started = true;
                                         }
                                     }
                                 }
-                                debug!(
-                                    "end i {}, num_accounted_for {}, total {}",
-                                    i, num_accounted_for, total
-                                );
 
                                 i += 1;
                             }
