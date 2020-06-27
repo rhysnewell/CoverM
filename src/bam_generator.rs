@@ -210,6 +210,7 @@ pub fn complete_processes(
         error!("Cannot continue since mapping failed.");
         process::exit(1);
     }
+    debug!("Process finished without error.")
 
     // There's (maybe) a (difficult to reproduce) single-thread issue where the
     // tempdir gets dropped before the process is finished. Hopefully putting a
