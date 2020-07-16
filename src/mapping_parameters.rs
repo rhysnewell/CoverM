@@ -75,7 +75,8 @@ impl<'a> MappingParameters<'a> {
         }
 
         match mapping_program {
-            MappingProgram::MINIMAP2_ONT | MappingProgram::MINIMAP2_PB => {
+            MappingProgram::MINIMAP2_ONT | MappingProgram::MINIMAP2_PB |
+            MappingProgram::NGMLR_ONT | MappingProgram::NGMLR_PB => {
                 if !read1.is_empty() || !interleaved.is_empty() {
                     error!(
                         "Paired-end read input specified to be mapped \
@@ -96,6 +97,8 @@ impl<'a> MappingParameters<'a> {
             | MappingProgram::MINIMAP2_ONT
             | MappingProgram::MINIMAP2_PB
             | MappingProgram::MINIMAP2_NO_PRESET => "minimap2-params",
+            MappingProgram::NGMLR_ONT
+            | MappingProgram::NGMLR_PB => "ngmlr-params"
         };
         let mapping_options = match m.is_present(mapping_parameters_arg) {
             true => {

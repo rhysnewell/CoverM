@@ -9,6 +9,10 @@ pub fn check_for_minimap2() {
     default_version_check("minimap2", "2.17-r941", false, None);
 }
 
+pub fn check_for_ngmlr() {
+    check_for_external_command_presence("ngmlr", "which ngmlr");
+}
+
 pub fn check_for_samtools() {
     check_for_external_command_presence("samtools", "which samtools");
     default_version_check("samtools", "1.9", false, None);

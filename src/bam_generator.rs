@@ -52,6 +52,8 @@ pub enum MappingProgram {
     MINIMAP2_ONT,
     MINIMAP2_PB,
     MINIMAP2_NO_PRESET,
+    NGMLR_ONT,
+    NGMLR_PB,
 }
 
 pub struct BamFileNamedReader {
@@ -358,7 +360,7 @@ pub fn generate_named_bam_readers_from_reads(
             .expect("Failed to convert tempfile path to str"),
         // remove extraneous @SQ lines
         match mapping_program {
-            MappingProgram::BWA_MEM => {
+            MappingProgram::BWA_MEM | MappingProgram::NGMLR_ONT | MappingProgram::NGMLR_PB => {
                 ""
             }
             // Required because of https://github.com/lh3/minimap2/issues/527
@@ -745,7 +747,9 @@ pub fn generate_bam_maker_generator_from_reads(
             .expect("Failed to convert tempfile path to str"),
         // remove extraneous @SQ lines
         match mapping_program {
-            MappingProgram::BWA_MEM => {
+            MappingProgram::BWA_MEM |
+            MappingProgram::NGMLR_ONT |
+            MappingProgram::NGMLR_PB => {
                 ""
             }
             // Required because of https://github.com/lh3/minimap2/issues/527
@@ -865,6 +869,7 @@ pub fn build_mapping_command(
             ReadFormat::Interleaved => "-p",
             ReadFormat::Coupled | ReadFormat::Single => "",
         },
+        MappingProgram::NGMLR_ONT | MappingProgram::NGMLR_PB => ""
     };
 
     let read_params2 = match read_format {
@@ -873,15 +878,36 @@ pub fn build_mapping_command(
         ReadFormat::Single => format!("'{}'", read1_path),
     };
 
-    return format!(
-        "{} {} -t {} {} '{}' {}",
-        match mapping_program {
-            MappingProgram::BWA_MEM => "bwa mem".to_string(),
-            _ => {
-                let split_prefix = tempfile::NamedTempFile::new().expect(&format!(
-                    "Failed to create {:?} minimap2 split_prefix file",
-                    mapping_program
-                ));
+
+    match mapping_program {
+        MappingProgram::BWA_MEM => {
+            return format!("{} {} -t {} {} '{}' {}",
+                           "bwa mem".to_string(),
+                           mapping_options.unwrap_or(""),
+                           threads,
+                           read_params1,
+                           reference,
+                           read_params2)
+        },
+        MappingProgram::NGMLR_ONT | MappingProgram::NGMLR_PB => {
+            return format!("ngmlr --bam-fix -t {} -x {} {} -r {} -q {}",
+                            threads,
+                            match mapping_program {
+                                MappingProgram::NGMLR_ONT => "ont",
+                                MappingProgram::NGMLR_PB => "pb",
+                                _ => unreachable!(),
+                            },
+                            mapping_options.unwrap_or(""),
+                            reference,
+                            read_params1);
+        },
+        _ => {
+            let split_prefix = tempfile::NamedTempFile::new().expect(&format!(
+                "Failed to create {:?} minimap2 split_prefix file",
+                mapping_program
+            ));
+            return format!(
+                "{} {} -t {} {} '{}' {}",
                 format!(
                     "minimap2 --split-prefix {} -a {}",
                     split_prefix
@@ -889,19 +915,17 @@ pub fn build_mapping_command(
                         .to_str()
                         .expect("Failed to convert split prefix tempfile path to str"),
                     match mapping_program {
-                        MappingProgram::BWA_MEM => unreachable!(),
                         MappingProgram::MINIMAP2_SR => "-x sr",
                         MappingProgram::MINIMAP2_ONT => "-x map-ont",
                         MappingProgram::MINIMAP2_PB => "-x map-pb",
                         MappingProgram::MINIMAP2_NO_PRESET => "",
-                    }
-                )
-            }
-        },
-        mapping_options.unwrap_or(""),
-        threads,
-        read_params1,
-        reference,
-        read_params2
-    );
+                        _ => unreachable!(),
+                    }),
+                mapping_options.unwrap_or(""),
+                threads,
+                read_params1,
+                reference,
+                read_params2);
+        }
+    }
 }

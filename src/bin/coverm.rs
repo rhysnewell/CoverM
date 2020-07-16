@@ -703,6 +703,10 @@ fn setup_mapping_index(
                     mapping_program,
                 ))
             }
+        },
+        MappingProgram::NGMLR_PB | MappingProgram::NGMLR_ONT => {
+            // NGMLR won't let us just create mapping index, so we will use the --skip-write parameter
+            None
         }
     }
 }
@@ -776,6 +780,9 @@ fn parse_mapping_program(m: &clap::ArgMatches) -> MappingProgram {
         | MappingProgram::MINIMAP2_PB
         | MappingProgram::MINIMAP2_NO_PRESET => {
             external_command_checker::check_for_minimap2();
+        }
+        MappingProgram::NGMLR_PB | MappingProgram::NGMLR_ONT => {
+            external_command_checker::check_for_ngmlr();
         }
     }
     return mapping_program;
