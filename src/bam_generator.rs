@@ -62,6 +62,42 @@ pub struct BamFileNamedReader {
     num_detected_primary_alignments: u64,
 }
 
+pub struct PlaceholderBamFileReader {
+    header: bam::HeaderView
+}
+
+impl NamedBamReader for PlaceholderBamFileReader {
+    fn name(&self) -> &str {
+        &("placeholder")
+    }
+
+    fn read(&mut self, _record: &mut bam::record::Record) -> HtslibResult<bool> {
+        Ok(false)
+    }
+
+    fn header(&self) -> &bam::HeaderView {
+        &self.header
+    }
+
+    fn complete(&self) {}
+
+    fn finish(self) {}
+
+    fn set_threads(&mut self, _n_threads: usize) {}
+
+    fn num_detected_primary_alignments(&self) -> u64 {
+        0
+    }
+}
+
+impl NamedBamReaderGenerator<PlaceholderBamFileReader> for PlaceholderBamFileReader {
+    fn start(self) -> PlaceholderBamFileReader {
+        PlaceholderBamFileReader {
+            header: bam::HeaderView::from_header(&bam::Header::new())
+        }
+    }
+}
+
 impl NamedBamReader for BamFileNamedReader {
     fn name(&self) -> &str {
         &(self.stoit_name)
