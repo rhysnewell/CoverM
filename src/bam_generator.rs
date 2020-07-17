@@ -98,6 +98,12 @@ impl NamedBamReaderGenerator<PlaceholderBamFileReader> for PlaceholderBamFileRea
     }
 }
 
+pub fn generate_placeholder() -> Vec<PlaceholderBamFileReader> {
+    vec!(PlaceholderBamFileReader{
+        header: bam::HeaderView::from_header(&bam::Header::new())
+    })
+}
+
 impl NamedBamReader for BamFileNamedReader {
     fn name(&self) -> &str {
         &(self.stoit_name)
