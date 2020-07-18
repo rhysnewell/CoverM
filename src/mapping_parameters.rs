@@ -33,6 +33,7 @@ impl<'a> MappingParameters<'a> {
         let mut interleaved: Vec<&str> = vec![];
         let mut unpaired: Vec<&str> = vec![];
 
+
         if m.is_present("read1") {
             read1 = m.values_of("read1").unwrap().collect();
             read2 = m.values_of("read2").unwrap().collect();
@@ -131,6 +132,62 @@ impl<'a> MappingParameters<'a> {
             unpaired: unpaired,
             iter_reference_index: 0,
             mapping_options: mapping_options,
+        };
+    }
+
+    pub fn generate_longread_from_clap(
+        m: &'a clap::ArgMatches,
+        mapping_program: MappingProgram,
+        reference_tempfile: &'a Option<NamedTempFile>,
+    ) -> MappingParameters<'a> {
+        let mut unpaired: Vec<&str> = vec![];
+
+        if m.is_present("longreads") {
+            unpaired = m.values_of("longreads").unwrap().collect();
+        } else if m.is_present("single") {
+            unpaired = m.values_of("single").unwrap().collect();
+        }
+
+        let mapping_parameters_arg = match mapping_program {
+            MappingProgram::BWA_MEM => "bwa-params",
+            MappingProgram::MINIMAP2_SR
+            | MappingProgram::MINIMAP2_ONT
+            | MappingProgram::MINIMAP2_PB
+            | MappingProgram::MINIMAP2_NO_PRESET => "minimap2-params",
+            MappingProgram::NGMLR_ONT
+            | MappingProgram::NGMLR_PB => "ngmlr-params"
+        };
+        let mapping_options = match m.is_present(mapping_parameters_arg) {
+            true => {
+                let params = m.value_of(mapping_parameters_arg);
+                params
+            }
+            false => None,
+        };
+        debug!(
+            "Setting mapper {:?} options as '{:?}'",
+            mapping_program, mapping_options
+        );
+
+        return MappingParameters {
+            references: match reference_tempfile {
+                Some(r) => vec![r.path().to_str().unwrap()],
+                None => match m.values_of("reference") {
+                    Some(refs) => refs.collect(),
+                    None => vec![],
+                },
+            },
+            threads: m
+                .value_of("threads")
+                .unwrap()
+                .parse::<u16>()
+                .expect("Failed to convert threads argument into integer"),
+            read1: vec![],
+            read2: vec![],
+            interleaved: vec![],
+            unpaired,
+            iter_reference_index: 0,
+            mapping_options,
         };
     }
 
