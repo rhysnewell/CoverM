@@ -941,7 +941,7 @@ pub fn build_mapping_command(
                             },
                             mapping_options.unwrap_or(""),
                             reference,
-                            read_params1);
+                            read_params2);
         },
         _ => {
             let split_prefix = tempfile::NamedTempFile::new().expect(&format!(
