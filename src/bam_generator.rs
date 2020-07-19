@@ -39,7 +39,7 @@ pub trait NamedBamReader {
     fn num_detected_primary_alignments(&self) -> u64;
 }
 
-pub trait NamedBamReaderGenerator<T: ?Sized> {
+pub trait NamedBamReaderGenerator<T> {
     // For readers that map, start the process of mapping
     fn start(self) -> T;
 }
