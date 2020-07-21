@@ -16,6 +16,7 @@ exclude = [ # Max upload is 10MB, as of writing test data was 15MB
 bio = "0.30.*"
 rust-htslib = { version="0.30.*", default-features = false }
 clap = "2.*"
+glob = "0.3.*"
 log = "0.4.*"
 env_logger = "0.7.*"
 nix = "0.17.*"
