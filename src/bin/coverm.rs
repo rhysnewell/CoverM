@@ -603,7 +603,7 @@ fn main() {
 
             let output_directory = m.value_of("output-directory").unwrap();
             setup_bam_cache_directory(output_directory);
-            let params = MappingParameters::generate_from_clap(&m, mapping_program, &None);
+            let params = MappingParameters::generate_from_clap(&m, mapping_program, &None, &None);
             let mut generator_sets = vec![];
             let discard_unmapped_reads = m.is_present("discard-unmapped");
 
@@ -1216,7 +1216,7 @@ where
     }
     let discard_unmapped = m.is_present("discard-unmapped");
     let sort_threads = m.value_of("threads").unwrap().parse::<i32>().unwrap();
-    let params = MappingParameters::generate_from_clap(&m, mapping_program, &reference_tempfile);
+    let params = MappingParameters::generate_from_clap(&m, mapping_program, &reference_tempfile, &None);
     let mut bam_readers = vec![];
     let mut concatenated_reference_name: Option<String> = None;
     let mut concatenated_read_names: Option<String> = None;
@@ -1309,7 +1309,7 @@ fn get_streamed_bam_readers<'a>(
     }
     let discard_unmapped = m.is_present("discard-unmapped");
 
-    let params = MappingParameters::generate_from_clap(&m, mapping_program, &reference_tempfile);
+    let params = MappingParameters::generate_from_clap(&m, mapping_program, &reference_tempfile, &None);
     let mut generator_set = vec![];
     for reference_wise_params in params {
         let mut bam_readers = vec![];
@@ -1484,7 +1484,7 @@ fn get_streamed_filtered_bam_readers(
     }
     let discard_unmapped = m.is_present("discard-unmapped");
 
-    let params = MappingParameters::generate_from_clap(&m, mapping_program, &reference_tempfile);
+    let params = MappingParameters::generate_from_clap(&m, mapping_program, &reference_tempfile, &None);
     let mut generator_set = vec![];
     for reference_wise_params in params {
         let mut bam_readers = vec![];

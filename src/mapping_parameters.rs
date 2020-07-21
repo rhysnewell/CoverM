@@ -1,5 +1,5 @@
 use std::process;
-
+use glob::glob;
 use tempfile::NamedTempFile;
 
 use bam_generator::MappingProgram;
@@ -27,6 +27,7 @@ impl<'a> MappingParameters<'a> {
         m: &'a clap::ArgMatches,
         mapping_program: MappingProgram,
         reference_tempfile: &'a Option<NamedTempFile>,
+        references: &'a Option<Vec<&'a str>>,
     ) -> MappingParameters<'a> {
         let mut read1: Vec<&str> = vec![];
         let mut read2: Vec<&str> = vec![];
@@ -116,10 +117,11 @@ impl<'a> MappingParameters<'a> {
         return MappingParameters {
             references: match reference_tempfile {
                 Some(r) => vec![r.path().to_str().unwrap()],
-                None => match m.values_of("reference") {
-                    Some(refs) => refs.collect(),
-                    None => vec![],
+                None => match references {
+                    Some(reference_vec) => reference_vec.clone(),
+                    None => m.values_of("reference").unwrap().collect(),
                 },
+
             },
             threads: m
                 .value_of("threads")
@@ -139,6 +141,7 @@ impl<'a> MappingParameters<'a> {
         m: &'a clap::ArgMatches,
         mapping_program: MappingProgram,
         reference_tempfile: &'a Option<NamedTempFile>,
+        references: &'a Option<Vec<&'a str>>,
     ) -> MappingParameters<'a> {
         let mut unpaired: Vec<&str> = vec![];
 
@@ -168,13 +171,12 @@ impl<'a> MappingParameters<'a> {
             "Setting mapper {:?} options as '{:?}'",
             mapping_program, mapping_options
         );
-
         return MappingParameters {
             references: match reference_tempfile {
                 Some(r) => vec![r.path().to_str().unwrap()],
-                None => match m.values_of("reference") {
-                    Some(refs) => refs.collect(),
-                    None => vec![],
+                None => match references {
+                    Some(reference_vec) => reference_vec.clone(),
+                    None => m.values_of("reference").unwrap().collect(),
                 },
             },
             threads: m
