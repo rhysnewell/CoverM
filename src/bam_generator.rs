@@ -28,7 +28,7 @@ pub trait NamedBamReader {
     // Return the bam header of the final BAM file
     fn header(&self) -> &bam::HeaderView;
 
-    fn complete(&self);
+    fn path(&self) -> &str;
 
     fn finish(self);
 
@@ -60,6 +60,7 @@ pub struct BamFileNamedReader {
     stoit_name: String,
     bam_reader: bam::Reader,
     num_detected_primary_alignments: u64,
+    path: String,
 }
 
 pub struct PlaceholderBamFileReader {
@@ -79,7 +80,9 @@ impl NamedBamReader for PlaceholderBamFileReader {
         &self.header
     }
 
-    fn complete(&self) {}
+    fn path(&self) -> &str {
+        &("placeholder")
+    }
 
     fn finish(self) {}
 
@@ -119,7 +122,9 @@ impl NamedBamReader for BamFileNamedReader {
         self.bam_reader.header()
     }
 
-    fn complete(&self) {}
+    fn path(&self) -> &str {
+        &self.path
+    }
 
     fn finish(self) {}
 
@@ -140,6 +145,7 @@ impl NamedBamReaderGenerator<BamFileNamedReader> for BamFileNamedReader {
             stoit_name: self.stoit_name,
             bam_reader: self.bam_reader,
             num_detected_primary_alignments: 0,
+            path: self.path,
         }
     }
 }
@@ -148,6 +154,7 @@ pub struct StreamingNamedBamReader {
     stoit_name: String,
     bam_reader: bam::Reader,
     tempdir: TempDir,
+    fifo_path: String,
     processes: Vec<std::process::Child>,
     command_strings: Vec<String>,
     log_file_descriptions: Vec<String>,
@@ -196,6 +203,7 @@ impl NamedBamReaderGenerator<StreamingNamedBamReader> for StreamingNamedBamReade
             stoit_name: self.stoit_name,
             bam_reader: bam_reader,
             tempdir: self.tempdir,
+            fifo_path: self.fifo_path.to_str().unwrap().to_string(),
             processes: processes,
             command_strings: self.command_strings,
             log_file_descriptions: self.log_file_descriptions,
@@ -279,8 +287,8 @@ impl NamedBamReader for StreamingNamedBamReader {
         self.bam_reader.header()
     }
 
-    fn complete(&self) {
-
+    fn path(&self) -> &str {
+        &self.fifo_path
     }
 
     fn finish(self) {
@@ -318,6 +326,7 @@ pub fn generate_named_bam_readers_from_bam_files(bam_paths: Vec<&str>) -> Vec<Ba
             bam_reader: bam::Reader::from_path(path)
                 .expect(&format!("Unable to find BAM file {}", path)),
             num_detected_primary_alignments: 0,
+            path: path.to_string(),
         })
         .collect()
 }
@@ -469,6 +478,7 @@ pub fn generate_named_bam_readers_from_reads(
 pub struct FilteredBamReader {
     stoit_name: String,
     filtered_stream: ReferenceSortedBamFilter,
+    path: String,
 }
 
 impl NamedBamReader for FilteredBamReader {
@@ -482,7 +492,9 @@ impl NamedBamReader for FilteredBamReader {
         &self.filtered_stream.reader.header()
     }
 
-    fn complete(&self) {}
+    fn path(&self) -> &str {
+        &self.path
+    }
 
     fn finish(self) {}
     fn set_threads(&mut self, n_threads: usize) {
@@ -503,6 +515,7 @@ impl NamedBamReaderGenerator<FilteredBamReader> for FilteredBamReader {
         FilteredBamReader {
             stoit_name: self.stoit_name,
             filtered_stream: self.filtered_stream,
+            path: self.path,
         }
     }
 }
@@ -543,6 +556,7 @@ pub fn generate_filtered_bam_readers_from_bam_files(
                 min_aligned_percent_pair,
                 true,
             ),
+            path: path.to_string(),
         };
 
         generators.push(filtered)
@@ -555,6 +569,7 @@ pub struct StreamingFilteredNamedBamReader {
     stoit_name: String,
     filtered_stream: ReferenceSortedBamFilter,
     tempdir: TempDir,
+    path: String,
     processes: Vec<std::process::Child>,
     command_strings: Vec<String>,
     log_file_descriptions: Vec<String>,
@@ -620,6 +635,7 @@ impl NamedBamReaderGenerator<StreamingFilteredNamedBamReader>
             stoit_name: self.stoit_name,
             filtered_stream: filtered_stream,
             tempdir: self.tempdir,
+            path: self.fifo_path.to_str().unwrap().to_string(),
             processes: processes,
             command_strings: self.command_strings,
             log_file_descriptions: self.log_file_descriptions,
@@ -639,8 +655,8 @@ impl NamedBamReader for StreamingFilteredNamedBamReader {
         self.filtered_stream.reader.header()
     }
 
-    fn complete(&self) {
-
+    fn path(&self) -> &str {
+        &self.path
     }
 
     fn finish(self) {

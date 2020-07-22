@@ -1,5 +1,4 @@
 use std::process;
-use glob::glob;
 use tempfile::NamedTempFile;
 
 use bam_generator::MappingProgram;

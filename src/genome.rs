@@ -321,7 +321,6 @@ pub fn mosdepth_genome_coverage_with_contig_names<
             (reads_mapped.num_mapped_reads * 100) as f64 / reads_mapped.num_reads as f64
         );
         reads_mapped_vector.push(reads_mapped);
-        bam_generated.complete();
         bam_generated.finish();
     }
     return reads_mapped_vector;
@@ -771,7 +770,6 @@ pub fn mosdepth_genome_coverage<
             (reads_mapped.num_mapped_reads * 100) as f64 / reads_mapped.num_reads as f64
         );
         reads_mapped_vector.push(reads_mapped);
-        bam_generated.complete();
         bam_generated.finish();
     }
     return reads_mapped_vector;

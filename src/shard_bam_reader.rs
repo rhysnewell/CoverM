@@ -480,7 +480,9 @@ impl NamedBamReader for ShardedBamReader {
         &self.bam_reader.header()
     }
 
-    fn complete(&self) {}
+    fn path(&self) -> &str {
+        &"no_path"
+    }
 
     fn finish(self) {
         complete_processes(
