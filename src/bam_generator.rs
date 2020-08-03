@@ -154,7 +154,7 @@ pub struct StreamingNamedBamReader {
     stoit_name: String,
     bam_reader: bam::Reader,
     tempdir: TempDir,
-    fifo_path: String,
+    path: String,
     processes: Vec<std::process::Child>,
     command_strings: Vec<String>,
     log_file_descriptions: Vec<String>,
@@ -204,7 +204,7 @@ impl NamedBamReaderGenerator<StreamingNamedBamReader> for StreamingNamedBamReade
             stoit_name: self.stoit_name,
             bam_reader: bam_reader,
             tempdir: self.tempdir,
-            fifo_path: self.cache_path,
+            path: self.cache_path,
             processes: processes,
             command_strings: self.command_strings,
             log_file_descriptions: self.log_file_descriptions,
@@ -289,7 +289,7 @@ impl NamedBamReader for StreamingNamedBamReader {
     }
 
     fn path(&self) -> &str {
-        &self.fifo_path
+        &self.path
     }
 
     fn finish(self) {
