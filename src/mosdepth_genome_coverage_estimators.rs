@@ -225,7 +225,6 @@ pub trait MosdepthGenomeCoverageEstimator {
 
     fn print_coverage<T: CoverageTaker>(&self, coverage: &f32, coverage_taker: &mut T);
 
-
     fn print_zero_coverage<T: CoverageTaker>(&self, coverage_taker: &mut T, entry_length: u64);
 
     fn copy(&self) -> CoverageEstimator;
@@ -404,7 +403,6 @@ impl MosdepthGenomeCoverageEstimator for CoverageEstimator {
                 let start_from = *contig_end_exclusion as usize;
                 let end_at = len1 - *contig_end_exclusion as usize - 1;
                 for (i, current) in ups_and_downs.iter().enumerate() {
-
                     cumulative_sum += current;
                     if i >= start_from && i <= end_at {
                         if cumulative_sum > 0 {
@@ -548,7 +546,6 @@ impl MosdepthGenomeCoverageEstimator for CoverageEstimator {
                                 if num_accounted_for >= min_index {
                                     if started {
                                         if num_accounted_for > max_index {
-
                                             let num_excess =
                                                 num_accounted_for - *num_covered as usize;
                                             let num_wanted = match max_index >= num_excess {
@@ -619,7 +616,6 @@ impl MosdepthGenomeCoverageEstimator for CoverageEstimator {
                 num_mapped_reads: _,
                 min_fraction_covered_bases,
             } => {
-
                 let final_total_bases: u64 =
                     *total_bases + unobserved_contig_lengths.iter().sum::<u64>();
                 if final_total_bases == 0

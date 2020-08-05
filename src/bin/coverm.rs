@@ -703,7 +703,7 @@ fn setup_mapping_index(
                     mapping_program,
                 ))
             }
-        },
+        }
         MappingProgram::NGMLR_PB | MappingProgram::NGMLR_ONT => {
             // NGMLR won't let us just create mapping index, so we will use the --skip-write parameter
             None
@@ -722,9 +722,10 @@ fn dereplicate(m: &clap::ArgMatches, genome_fasta_files: &Vec<String>) -> Vec<St
         genome_fasta_files,
         &m,
         &galah_command_line_definition(),
-    ).expect("Failed to parse galah clustering arguments correctly");
+    )
+    .expect("Failed to parse galah clustering arguments correctly");
     galah::external_command_checker::check_for_dependencies();
-    info!("Dereplicating genome at {}% ANI ..", clusterer.ani*100.);
+    info!("Dereplicating genome at {}% ANI ..", clusterer.ani * 100.);
 
     let cluster_indices = clusterer.cluster();
     info!(
@@ -1216,7 +1217,8 @@ where
     }
     let discard_unmapped = m.is_present("discard-unmapped");
     let sort_threads = m.value_of("threads").unwrap().parse::<i32>().unwrap();
-    let params = MappingParameters::generate_from_clap(&m, mapping_program, &reference_tempfile, &None);
+    let params =
+        MappingParameters::generate_from_clap(&m, mapping_program, &reference_tempfile, &None);
     let mut bam_readers = vec![];
     let mut concatenated_reference_name: Option<String> = None;
     let mut concatenated_read_names: Option<String> = None;
@@ -1309,7 +1311,8 @@ fn get_streamed_bam_readers<'a>(
     }
     let discard_unmapped = m.is_present("discard-unmapped");
 
-    let params = MappingParameters::generate_from_clap(&m, mapping_program, &reference_tempfile, &None);
+    let params =
+        MappingParameters::generate_from_clap(&m, mapping_program, &reference_tempfile, &None);
     let mut generator_set = vec![];
     for reference_wise_params in params {
         let mut bam_readers = vec![];
@@ -1484,7 +1487,8 @@ fn get_streamed_filtered_bam_readers(
     }
     let discard_unmapped = m.is_present("discard-unmapped");
 
-    let params = MappingParameters::generate_from_clap(&m, mapping_program, &reference_tempfile, &None);
+    let params =
+        MappingParameters::generate_from_clap(&m, mapping_program, &reference_tempfile, &None);
     let mut generator_set = vec![];
     for reference_wise_params in params {
         let mut bam_readers = vec![];

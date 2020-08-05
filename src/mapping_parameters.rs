@@ -33,7 +33,6 @@ impl<'a> MappingParameters<'a> {
         let mut interleaved: Vec<&str> = vec![];
         let mut unpaired: Vec<&str> = vec![];
 
-
         if m.is_present("read1") {
             read1 = m.values_of("read1").unwrap().collect();
             read2 = m.values_of("read2").unwrap().collect();
@@ -76,8 +75,10 @@ impl<'a> MappingParameters<'a> {
         }
 
         match mapping_program {
-            MappingProgram::MINIMAP2_ONT | MappingProgram::MINIMAP2_PB |
-            MappingProgram::NGMLR_ONT | MappingProgram::NGMLR_PB => {
+            MappingProgram::MINIMAP2_ONT
+            | MappingProgram::MINIMAP2_PB
+            | MappingProgram::NGMLR_ONT
+            | MappingProgram::NGMLR_PB => {
                 if !read1.is_empty() || !interleaved.is_empty() {
                     error!(
                         "Paired-end read input specified to be mapped \
@@ -98,8 +99,7 @@ impl<'a> MappingParameters<'a> {
             | MappingProgram::MINIMAP2_ONT
             | MappingProgram::MINIMAP2_PB
             | MappingProgram::MINIMAP2_NO_PRESET => "minimap2-params",
-            MappingProgram::NGMLR_ONT
-            | MappingProgram::NGMLR_PB => "ngmlr-params"
+            MappingProgram::NGMLR_ONT | MappingProgram::NGMLR_PB => "ngmlr-params",
         };
         let mapping_options = match m.is_present(mapping_parameters_arg) {
             true => {
@@ -120,7 +120,6 @@ impl<'a> MappingParameters<'a> {
                     Some(reference_vec) => reference_vec.clone(),
                     None => m.values_of("reference").unwrap().collect(),
                 },
-
             },
             threads: m
                 .value_of("threads")
@@ -156,8 +155,7 @@ impl<'a> MappingParameters<'a> {
             | MappingProgram::MINIMAP2_ONT
             | MappingProgram::MINIMAP2_PB
             | MappingProgram::MINIMAP2_NO_PRESET => "minimap2-params",
-            MappingProgram::NGMLR_ONT
-            | MappingProgram::NGMLR_PB => "ngmlr-params"
+            MappingProgram::NGMLR_ONT | MappingProgram::NGMLR_PB => "ngmlr-params",
         };
         let mapping_options = match m.is_present(mapping_parameters_arg) {
             true => {

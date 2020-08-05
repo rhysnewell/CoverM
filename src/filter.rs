@@ -1,7 +1,7 @@
 use std::collections::BTreeMap;
 use std::process;
-use std::sync::Arc;
 use std::str;
+use std::sync::Arc;
 
 use FlagFilter;
 
@@ -209,7 +209,8 @@ impl ReferenceSortedBamFilter {
                                 debug!("Read pair passed QC");
                                 self.known_next_read = Some(record.clone());
                                 record.clone_from(
-                                    &Arc::try_unwrap(record1).expect("Cannot get strong RC pointer"),
+                                    &Arc::try_unwrap(record1)
+                                        .expect("Cannot get strong RC pointer"),
                                 );
                                 debug!("Returning..");
                                 return Ok(true);

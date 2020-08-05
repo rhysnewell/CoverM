@@ -64,8 +64,9 @@ impl TemporaryIndexStruct {
             | MappingProgram::MINIMAP2_ONT
             | MappingProgram::MINIMAP2_PB
             | MappingProgram::MINIMAP2_NO_PRESET => std::process::Command::new("minimap2"),
-            MappingProgram::NGMLR_ONT
-            | MappingProgram::NGMLR_PB => std::process::Command::new("ngmlr")
+            MappingProgram::NGMLR_ONT | MappingProgram::NGMLR_PB => {
+                std::process::Command::new("ngmlr")
+            }
         };
         match &mapping_program {
             MappingProgram::BWA_MEM => {
@@ -100,17 +101,12 @@ impl TemporaryIndexStruct {
                     None => {}
                 }
                 cmd.arg("-d").arg(&index_path).arg(&reference_path);
-            },
-            MappingProgram::NGMLR_ONT
-            | MappingProgram::NGMLR_PB => {
-                match mapping_program {
-                    MappingProgram::NGMLR_PB => {
-                    }
-                    MappingProgram::NGMLR_ONT => {
-                    }
-                    _ => {}
-                }
             }
+            MappingProgram::NGMLR_ONT | MappingProgram::NGMLR_PB => match mapping_program {
+                MappingProgram::NGMLR_PB => {}
+                MappingProgram::NGMLR_ONT => {}
+                _ => {}
+            },
         };
         match index_creation_options {
             Some(params) => {

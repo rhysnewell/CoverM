@@ -64,7 +64,7 @@ pub struct BamFileNamedReader {
 }
 
 pub struct PlaceholderBamFileReader {
-    header: bam::HeaderView
+    header: bam::HeaderView,
 }
 
 impl NamedBamReader for PlaceholderBamFileReader {
@@ -96,15 +96,15 @@ impl NamedBamReader for PlaceholderBamFileReader {
 impl NamedBamReaderGenerator<PlaceholderBamFileReader> for PlaceholderBamFileReader {
     fn start(self) -> PlaceholderBamFileReader {
         PlaceholderBamFileReader {
-            header: bam::HeaderView::from_header(&bam::Header::new())
+            header: bam::HeaderView::from_header(&bam::Header::new()),
         }
     }
 }
 
 pub fn generate_placeholder() -> Vec<PlaceholderBamFileReader> {
-    vec!(PlaceholderBamFileReader{
-        header: bam::HeaderView::from_header(&bam::Header::new())
-    })
+    vec![PlaceholderBamFileReader {
+        header: bam::HeaderView::from_header(&bam::Header::new()),
+    }]
 }
 
 impl NamedBamReader for BamFileNamedReader {
@@ -163,14 +163,14 @@ pub struct StreamingNamedBamReader {
 }
 
 pub struct StreamingNamedBamReaderGenerator {
-    stoit_name: String,
-    tempdir: TempDir,
-    fifo_path: std::path::PathBuf,
-    cache_path: String,
-    pre_processes: Vec<std::process::Command>,
-    command_strings: Vec<String>,
-    log_file_descriptions: Vec<String>,
-    log_files: Vec<tempfile::NamedTempFile>,
+    pub stoit_name: String,
+    pub tempdir: TempDir,
+    pub fifo_path: std::path::PathBuf,
+    pub cache_path: String,
+    pub pre_processes: Vec<std::process::Command>,
+    pub command_strings: Vec<String>,
+    pub log_file_descriptions: Vec<String>,
+    pub log_files: Vec<tempfile::NamedTempFile>,
 }
 
 impl NamedBamReaderGenerator<StreamingNamedBamReader> for StreamingNamedBamReaderGenerator {
@@ -582,21 +582,21 @@ pub struct StreamingFilteredNamedBamReader {
 }
 
 pub struct StreamingFilteredNamedBamReaderGenerator {
-    stoit_name: String,
-    tempdir: TempDir,
-    fifo_path: std::path::PathBuf,
-    cache_path: String,
-    pre_processes: Vec<std::process::Command>,
-    command_strings: Vec<String>,
-    flag_filters: FlagFilter,
-    min_aligned_length_single: u32,
-    min_percent_identity_single: f32,
-    min_aligned_percent_single: f32,
-    min_aligned_length_pair: u32,
-    min_percent_identity_pair: f32,
-    min_aligned_percent_pair: f32,
-    log_file_descriptions: Vec<String>,
-    log_files: Vec<tempfile::NamedTempFile>,
+    pub stoit_name: String,
+    pub tempdir: TempDir,
+    pub fifo_path: std::path::PathBuf,
+    pub cache_path: String,
+    pub pre_processes: Vec<std::process::Command>,
+    pub command_strings: Vec<String>,
+    pub flag_filters: FlagFilter,
+    pub min_aligned_length_single: u32,
+    pub min_percent_identity_single: f32,
+    pub min_aligned_percent_single: f32,
+    pub min_aligned_length_pair: u32,
+    pub min_percent_identity_pair: f32,
+    pub min_aligned_percent_pair: f32,
+    pub log_file_descriptions: Vec<String>,
+    pub log_files: Vec<tempfile::NamedTempFile>,
 }
 
 impl NamedBamReaderGenerator<StreamingFilteredNamedBamReader>
@@ -812,9 +812,7 @@ pub fn generate_bam_maker_generator_from_reads(
             .expect("Failed to convert tempfile path to str"),
         // remove extraneous @SQ lines
         match mapping_program {
-            MappingProgram::BWA_MEM |
-            MappingProgram::NGMLR_ONT |
-            MappingProgram::NGMLR_PB => {
+            MappingProgram::BWA_MEM | MappingProgram::NGMLR_ONT | MappingProgram::NGMLR_PB => {
                 ""
             }
             // Required because of https://github.com/lh3/minimap2/issues/527
@@ -934,7 +932,7 @@ pub fn build_mapping_command(
             ReadFormat::Interleaved => "-p",
             ReadFormat::Coupled | ReadFormat::Single => "",
         },
-        MappingProgram::NGMLR_ONT | MappingProgram::NGMLR_PB => ""
+        MappingProgram::NGMLR_ONT | MappingProgram::NGMLR_PB => "",
     };
 
     let read_params2 = match read_format {
@@ -943,29 +941,32 @@ pub fn build_mapping_command(
         ReadFormat::Single => format!("'{}'", read1_path),
     };
 
-
     match mapping_program {
         MappingProgram::BWA_MEM => {
-            return format!("{} {} -t {} {} '{}' {}",
-                           "bwa mem".to_string(),
-                           mapping_options.unwrap_or(""),
-                           threads,
-                           read_params1,
-                           reference,
-                           read_params2)
-        },
+            return format!(
+                "{} {} -t {} {} '{}' {}",
+                "bwa mem".to_string(),
+                mapping_options.unwrap_or(""),
+                threads,
+                read_params1,
+                reference,
+                read_params2
+            )
+        }
         MappingProgram::NGMLR_ONT | MappingProgram::NGMLR_PB => {
-            return format!("ngmlr --bam-fix -t {} -x {} {} -r {} -q {}",
-                            threads,
-                            match mapping_program {
-                                MappingProgram::NGMLR_ONT => "ont",
-                                MappingProgram::NGMLR_PB => "pb",
-                                _ => unreachable!(),
-                            },
-                            mapping_options.unwrap_or(""),
-                            reference,
-                            read_params2);
-        },
+            return format!(
+                "ngmlr --bam-fix -t {} -x {} {} -r {} -q {}",
+                threads,
+                match mapping_program {
+                    MappingProgram::NGMLR_ONT => "ont",
+                    MappingProgram::NGMLR_PB => "pb",
+                    _ => unreachable!(),
+                },
+                mapping_options.unwrap_or(""),
+                reference,
+                read_params2
+            );
+        }
         _ => {
             let split_prefix = tempfile::NamedTempFile::new().expect(&format!(
                 "Failed to create {:?} minimap2 split_prefix file",
@@ -980,7 +981,8 @@ pub fn build_mapping_command(
                         .to_str()
                         .expect("Failed to convert split prefix tempfile path to str"),
                     match mapping_program {
-                        MappingProgram::MINIMAP2_SR => "-x sr",
+                        MappingProgram::MINIMAP2_SR =>
+                            "-x sr --secondary=yes",
                         MappingProgram::MINIMAP2_ONT => "-x map-ont",
                         MappingProgram::MINIMAP2_PB => "-x map-pb",
                         MappingProgram::MINIMAP2_NO_PRESET => "",
