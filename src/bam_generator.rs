@@ -981,18 +981,19 @@ pub fn build_mapping_command(
                         .to_str()
                         .expect("Failed to convert split prefix tempfile path to str"),
                     match mapping_program {
-                        MappingProgram::MINIMAP2_SR =>
-                            "-x sr --secondary=yes",
+                        MappingProgram::MINIMAP2_SR => "-x sr --secondary=yes",
                         MappingProgram::MINIMAP2_ONT => "-x map-ont",
                         MappingProgram::MINIMAP2_PB => "-x map-pb",
                         MappingProgram::MINIMAP2_NO_PRESET => "",
                         _ => unreachable!(),
-                    }),
+                    }
+                ),
                 mapping_options.unwrap_or(""),
                 threads,
                 read_params1,
                 reference,
-                read_params2);
+                read_params2
+            );
         }
     }
 }
