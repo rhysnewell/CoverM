@@ -476,6 +476,11 @@ impl NamedBamReader for ShardedBamReader {
         }
         return res;
     }
+
+    fn pileup(&mut self) -> Option<bam::pileup::Pileups<bam::Reader>> {
+        Some(self.bam_reader.pileup())
+    }
+
     fn header(&self) -> &bam::HeaderView {
         &self.bam_reader.header()
     }

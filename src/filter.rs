@@ -231,6 +231,10 @@ impl ReferenceSortedBamFilter {
         }
     }
 
+    pub fn pileup(&mut self) -> bam::pileup::Pileups<bam::Reader> {
+        self.reader.pileup()
+    }
+
     pub fn set_threads(&mut self, n_threads: usize) {
         if n_threads > 1 {
             self.reader.set_threads(n_threads - 1).unwrap();
