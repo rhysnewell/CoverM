@@ -13,6 +13,7 @@ use rust_htslib::bam::Read as BamRead;
 
 use nix::sys::stat;
 use nix::unistd;
+use std::path::Path;
 use tempdir::TempDir;
 use tempfile;
 
@@ -47,6 +48,36 @@ pub trait NamedBamReaderGenerator<T> {
     fn start(self) -> T;
 }
 
+pub trait IndexedNamedBamReader {
+    // Name of the stoit
+    fn name(&self) -> &str;
+
+    // Fetch the specified region
+    fn fetch(&mut self, tid: u32, beg: u64, end: u64) -> HtslibResult<()>;
+
+    // Fetch from string
+    fn fetch_str(&mut self, region: &[u8]) -> HtslibResult<()>;
+
+    // Read a record into record parameter
+    fn read(&mut self, record: &mut bam::record::Record) -> HtslibResult<bool>;
+
+    // Return pileup alignments
+    fn pileup(&mut self) -> Option<bam::pileup::Pileups<bam::IndexedReader>>;
+
+    // Return the bam header of the final BAM file
+    fn header(&self) -> &bam::HeaderView;
+
+    fn path(&self) -> &str;
+
+    fn finish(self);
+
+    //set the number of threads for Bam reading
+    fn set_threads(&mut self, n_threads: usize);
+
+    // Number of reads that were detected
+    fn num_detected_primary_alignments(&self) -> u64;
+}
+
 #[derive(Debug, Clone, Copy)]
 #[allow(non_camel_case_types)]
 pub enum MappingProgram {
@@ -62,6 +93,13 @@ pub enum MappingProgram {
 pub struct BamFileNamedReader {
     stoit_name: String,
     bam_reader: bam::Reader,
+    num_detected_primary_alignments: u64,
+    path: String,
+}
+
+pub struct IndexedBamFileNamedReader {
+    stoit_name: String,
+    bam_reader: bam::IndexedReader,
     num_detected_primary_alignments: u64,
     path: String,
 }
@@ -106,6 +144,65 @@ impl NamedBamReader for BamFileNamedReader {
 impl NamedBamReaderGenerator<BamFileNamedReader> for BamFileNamedReader {
     fn start(self) -> BamFileNamedReader {
         BamFileNamedReader {
+            stoit_name: self.stoit_name,
+            bam_reader: self.bam_reader,
+            num_detected_primary_alignments: 0,
+            path: self.path,
+        }
+    }
+}
+
+impl IndexedNamedBamReader for IndexedBamFileNamedReader {
+    fn name(&self) -> &str {
+        &(self.stoit_name)
+    }
+
+    // Fetch the specified region
+    fn fetch(&mut self, tid: u32, beg: u64, end: u64) -> HtslibResult<()> {
+        self.bam_reader.fetch(tid, beg, end)
+    }
+
+    // Fetch from string
+    fn fetch_str(&mut self, region: &[u8]) -> HtslibResult<()> {
+        self.bam_reader.fetch_str(region)
+    }
+
+    fn read(&mut self, record: &mut bam::record::Record) -> HtslibResult<bool> {
+        let res = self.bam_reader.read(record);
+        if res == Ok(true) && !record.is_secondary() && !record.is_supplementary() {
+            self.num_detected_primary_alignments += 1;
+        }
+        return res;
+    }
+
+    fn pileup(&mut self) -> Option<bam::pileup::Pileups<bam::IndexedReader>> {
+        Some(self.bam_reader.pileup())
+    }
+
+    fn header(&self) -> &bam::HeaderView {
+        self.bam_reader.header()
+    }
+
+    fn path(&self) -> &str {
+        &self.path
+    }
+
+    fn finish(self) {}
+
+    fn set_threads(&mut self, n_threads: usize) {
+        if n_threads > 1 {
+            self.bam_reader.set_threads(n_threads - 1).unwrap();
+        }
+    }
+
+    fn num_detected_primary_alignments(&self) -> u64 {
+        return self.num_detected_primary_alignments;
+    }
+}
+
+impl NamedBamReaderGenerator<IndexedBamFileNamedReader> for IndexedBamFileNamedReader {
+    fn start(self) -> IndexedBamFileNamedReader {
+        IndexedBamFileNamedReader {
             stoit_name: self.stoit_name,
             bam_reader: self.bam_reader,
             num_detected_primary_alignments: 0,
@@ -297,6 +394,39 @@ pub fn generate_named_bam_readers_from_bam_files(bam_paths: Vec<&str>) -> Vec<Ba
                 .expect(&format!("Unable to find BAM file {}", path)),
             num_detected_primary_alignments: 0,
             path: path.to_string(),
+        })
+        .collect()
+}
+
+pub fn generate_indexed_named_bam_readers_from_bam_files(
+    bam_paths: Vec<&str>,
+    threads: u32,
+) -> Vec<IndexedBamFileNamedReader> {
+    bam_paths
+        .iter()
+        .map(|path| {
+            // check and build bam index if it doesn't exist
+            if !Path::new(&(path.to_string() + ".bai")).exists() {
+                bam::index::build(
+                    path,
+                    Some(&format!("{}.bai", path).as_str()),
+                    bam::index::Type::BAI,
+                    threads,
+                )
+                .expect(&format!("Unable to index bam at {}", &path));
+            }
+            IndexedBamFileNamedReader {
+                stoit_name: std::path::Path::new(path)
+                    .file_stem()
+                    .unwrap()
+                    .to_str()
+                    .expect("failure to convert bam file name to stoit name - UTF8 error maybe?")
+                    .to_string(),
+                bam_reader: bam::IndexedReader::from_path(path)
+                    .expect(&format!("Unable to find BAM file {}", path)),
+                num_detected_primary_alignments: 0,
+                path: path.to_string(),
+            }
         })
         .collect()
 }
