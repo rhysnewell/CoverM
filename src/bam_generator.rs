@@ -3,14 +3,15 @@ use std::io::Read;
 use std::process;
 use std::sync::atomic::{compiler_fence, Ordering};
 
+use external_command_checker;
 use filter::*;
 use mapping_index_maintenance::MappingIndex;
 use mapping_parameters::ReadFormat;
-use FlagFilter;
-
 use rust_htslib::bam;
 use rust_htslib::bam::Read as BamRead;
+use FlagFilter;
 
+use bird_tool_utils::command;
 use nix::sys::stat;
 use nix::unistd;
 use std::path::Path;
@@ -402,9 +403,33 @@ pub fn generate_indexed_named_bam_readers_from_bam_files(
     bam_paths: Vec<&str>,
     threads: u32,
 ) -> Vec<IndexedBamFileNamedReader> {
+    external_command_checker::check_for_gatk();
     bam_paths
         .iter()
         .map(|path| {
+
+            let tmp = tempfile::NamedTempFile::new().unwrap();
+
+            let groups_command = format!(
+                "set -e -o pipefail; gatk AddOrReplaceReadGroups -I {} -O {:?} -SM 1 -LB N -PL N -PU N && \
+                cp {:?} {}",
+                path,
+                tmp.path(),
+                tmp.path(),
+                path,
+            );
+
+            command::finish_command_safely(
+                std::process::Command::new("bash")
+                    .arg("-c")
+                    .arg(&groups_command)
+                    .stderr(std::process::Stdio::piped())
+                    .stdout(std::process::Stdio::piped())
+                    .spawn()
+                    .expect("Unable to execute bash"),
+                "gatk",
+            );
+
             // check and build bam index if it doesn't exist
             if !Path::new(&(path.to_string() + ".bai")).exists() {
                 bam::index::build(
