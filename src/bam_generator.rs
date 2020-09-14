@@ -407,29 +407,6 @@ pub fn generate_indexed_named_bam_readers_from_bam_files(
     bam_paths
         .iter()
         .map(|path| {
-
-            let tmp = tempfile::NamedTempFile::new().unwrap();
-
-            let groups_command = format!(
-                "set -e -o pipefail; gatk AddOrReplaceReadGroups -I {} -O {:?} -SM 1 -LB N -PL N -PU N && \
-                cp {:?} {}",
-                path,
-                tmp.path(),
-                tmp.path(),
-                path,
-            );
-
-            command::finish_command_safely(
-                std::process::Command::new("bash")
-                    .arg("-c")
-                    .arg(&groups_command)
-                    .stderr(std::process::Stdio::piped())
-                    .stdout(std::process::Stdio::piped())
-                    .spawn()
-                    .expect("Unable to execute bash"),
-                "gatk",
-            );
-
             // check and build bam index if it doesn't exist
             if !Path::new(&(path.to_string() + ".bai")).exists() {
                 bam::index::build(
