@@ -403,7 +403,6 @@ pub fn generate_indexed_named_bam_readers_from_bam_files(
     bam_paths: Vec<&str>,
     threads: u32,
 ) -> Vec<IndexedBamFileNamedReader> {
-    external_command_checker::check_for_gatk();
     bam_paths
         .iter()
         .map(|path| {
@@ -1084,7 +1083,7 @@ pub fn build_mapping_command(
                 mapping_program
             ));
             return format!(
-                "{} {} -t {} {} '{}' {}",
+                "{} {} -t {} -2 {} '{}' {}",
                 format!(
                     "minimap2 --split-prefix {} -a {}",
                     split_prefix

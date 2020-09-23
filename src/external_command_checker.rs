@@ -17,7 +17,3 @@ pub fn check_for_samtools() {
     check_for_external_command_presence("samtools", "which samtools");
     default_version_check("samtools", "1.9", false, None);
 }
-
-pub fn check_for_gatk() {
-    self::check_for_external_command_presence("gatk", "which gatk");
-}
