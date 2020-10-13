@@ -98,6 +98,7 @@ pub struct BamFileNamedReader {
     path: String,
 }
 
+#[derive(Debug)]
 pub struct IndexedBamFileNamedReader {
     stoit_name: String,
     bam_reader: bam::IndexedReader,
@@ -111,8 +112,14 @@ impl NamedBamReader for BamFileNamedReader {
     }
     fn read(&mut self, record: &mut bam::record::Record) -> HtslibResult<bool> {
         let res = self.bam_reader.read(record);
-        if res == Ok(true) && !record.is_secondary() && !record.is_supplementary() {
-            self.num_detected_primary_alignments += 1;
+        match res {
+            Ok(true) => {
+                if !record.is_secondary() && !record.is_supplementary() {
+                    self.num_detected_primary_alignments += 1;
+                }
+            }
+            Err(e) => panic!("Error: {:?}", e),
+            _ => {}
         }
         return res;
     }
@@ -170,8 +177,14 @@ impl IndexedNamedBamReader for IndexedBamFileNamedReader {
 
     fn read(&mut self, record: &mut bam::record::Record) -> HtslibResult<bool> {
         let res = self.bam_reader.read(record);
-        if res == Ok(true) && !record.is_secondary() && !record.is_supplementary() {
-            self.num_detected_primary_alignments += 1;
+        match res {
+            Ok(true) => {
+                if !record.is_secondary() && !record.is_supplementary() {
+                    self.num_detected_primary_alignments += 1;
+                }
+            }
+            Err(e) => panic!("Error: {:?}", e),
+            _ => {}
         }
         return res;
     }
@@ -341,8 +354,14 @@ impl NamedBamReader for StreamingNamedBamReader {
     }
     fn read(&mut self, record: &mut bam::record::Record) -> HtslibResult<bool> {
         let res = self.bam_reader.read(record);
-        if res == Ok(true) && !record.is_secondary() && !record.is_supplementary() {
-            self.num_detected_primary_alignments += 1;
+        match res {
+            Ok(true) => {
+                if !record.is_secondary() && !record.is_supplementary() {
+                    self.num_detected_primary_alignments += 1;
+                }
+            }
+            Err(e) => panic!("Error: {:?}", e),
+            _ => {}
         }
         return res;
     }

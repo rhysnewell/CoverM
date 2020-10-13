@@ -424,7 +424,7 @@ where
                 .expect("Failure to set BAM writer compression level - programming bug?");
             debug!("Writing records to samtools sort input FIFO..");
             let mut record = bam::Record::new();
-            while demux.read(&mut record) == Ok(true) {
+            while demux.read(&mut record).unwrap() == true {
                 debug!(
                     "Writing tid {} for qname {}",
                     record.tid(),
@@ -471,8 +471,14 @@ impl NamedBamReader for ShardedBamReader {
     }
     fn read(&mut self, record: &mut bam::record::Record) -> HtslibResult<bool> {
         let res = self.bam_reader.read(record);
-        if res == Ok(true) && !record.is_secondary() && !record.is_supplementary() {
-            self.num_detected_primary_alignments += 1;
+        match res {
+            Ok(true) => {
+                if !record.is_secondary() && !record.is_supplementary() {
+                    self.num_detected_primary_alignments += 1;
+                }
+            }
+            Err(e) => panic!("Error: {:?}", e),
+            _ => {}
         }
         return res;
     }
