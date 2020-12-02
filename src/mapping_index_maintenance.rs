@@ -63,6 +63,7 @@ impl TemporaryIndexStruct {
             MappingProgram::MINIMAP2_SR
             | MappingProgram::MINIMAP2_ONT
             | MappingProgram::MINIMAP2_PB
+            | MappingProgram::MINIMAP2_ASS
             | MappingProgram::MINIMAP2_NO_PRESET => std::process::Command::new("minimap2"),
             MappingProgram::NGMLR_ONT | MappingProgram::NGMLR_PB => {
                 std::process::Command::new("ngmlr")
@@ -78,6 +79,7 @@ impl TemporaryIndexStruct {
             MappingProgram::MINIMAP2_SR
             | MappingProgram::MINIMAP2_ONT
             | MappingProgram::MINIMAP2_PB
+            | MappingProgram::MINIMAP2_ASS
             | MappingProgram::MINIMAP2_NO_PRESET => {
                 match &mapping_program {
                     MappingProgram::MINIMAP2_SR => {
@@ -88,6 +90,9 @@ impl TemporaryIndexStruct {
                     }
                     MappingProgram::MINIMAP2_PB => {
                         cmd.arg("-x").arg("map-pb");
+                    }
+                    MappingProgram::MINIMAP2_ASS => {
+                        cmd.arg("-x").arg("asm5");
                     }
                     MappingProgram::MINIMAP2_NO_PRESET
                     | MappingProgram::BWA_MEM

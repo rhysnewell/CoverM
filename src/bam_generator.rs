@@ -86,6 +86,7 @@ pub enum MappingProgram {
     MINIMAP2_SR,
     MINIMAP2_ONT,
     MINIMAP2_PB,
+    MINIMAP2_ASS,
     MINIMAP2_NO_PRESET,
     NGMLR_ONT,
     NGMLR_PB,
@@ -1056,6 +1057,7 @@ pub fn build_mapping_command(
         MappingProgram::MINIMAP2_SR
         | MappingProgram::MINIMAP2_ONT
         | MappingProgram::MINIMAP2_PB
+        | MappingProgram::MINIMAP2_ASS
         | MappingProgram::MINIMAP2_NO_PRESET => "",
         MappingProgram::BWA_MEM => match read_format {
             ReadFormat::Interleaved => "-p",
@@ -1113,6 +1115,7 @@ pub fn build_mapping_command(
                         MappingProgram::MINIMAP2_SR => "-x sr --secondary=yes",
                         MappingProgram::MINIMAP2_ONT => "-x map-ont",
                         MappingProgram::MINIMAP2_PB => "-x map-pb",
+                        MappingProgram::MINIMAP2_ASS => "--paf-no-hit -a -x asm5 --cs -r2k",
                         MappingProgram::MINIMAP2_NO_PRESET => "",
                         _ => unreachable!(),
                     }
