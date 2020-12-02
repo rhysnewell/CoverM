@@ -1115,7 +1115,7 @@ pub fn build_mapping_command(
                         MappingProgram::MINIMAP2_SR => "-x sr --secondary=yes",
                         MappingProgram::MINIMAP2_ONT => "-x map-ont",
                         MappingProgram::MINIMAP2_PB => "-x map-pb",
-                        MappingProgram::MINIMAP2_ASS => "--paf-no-hit -a -x asm5 --cs -r2k",
+                        MappingProgram::MINIMAP2_ASS => "--paf-no-hit -a -x asm5 -r2k",
                         MappingProgram::MINIMAP2_NO_PRESET => "",
                         _ => unreachable!(),
                     }
