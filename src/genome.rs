@@ -107,11 +107,7 @@ pub fn mosdepth_genome_coverage_with_contig_names<
         let mut num_mapped_reads_in_current_contig: u64 = 0;
         let mut total_edit_distance_in_current_contig: u64 = 0;
         let mut total_indels_in_current_contig: u64 = 0;
-        while bam_generated
-            .read(&mut record)
-            .expect("Failure to read BAM record")
-            == true
-        {
+        while bam_generated.read(&mut record) == true {
             if record.is_secondary() || record.is_supplementary() {
                 continue;
             }
@@ -499,11 +495,7 @@ pub fn mosdepth_genome_coverage<
         let mut num_mapped_reads_in_current_genome: u64 = 0;
         let mut total_edit_distance_in_current_contig: u64 = 0;
         let mut total_indels_in_current_contig: u64 = 0;
-        while bam_generated
-            .read(&mut record)
-            .expect("Failure to read BAM record")
-            == true
-        {
+        while bam_generated.read(&mut record) == true {
             if record.is_secondary() || record.is_supplementary() {
                 continue;
             }

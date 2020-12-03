@@ -8,7 +8,8 @@ use filter::*;
 use mapping_index_maintenance::MappingIndex;
 use mapping_parameters::ReadFormat;
 use rust_htslib::bam;
-use rust_htslib::bam::Read as BamRead;
+use rust_htslib::bam::{FetchDefinition, Read as BamRead};
+use rust_htslib::errors::Error;
 use FlagFilter;
 
 use bird_tool_utils::command;
@@ -18,14 +19,12 @@ use std::path::Path;
 use tempdir::TempDir;
 use tempfile;
 
-use rust_htslib::bam::errors::Result as HtslibResult;
-
 pub trait NamedBamReader {
     // Name of the stoit
     fn name(&self) -> &str;
 
     // Read a record into record parameter
-    fn read(&mut self, record: &mut bam::record::Record) -> HtslibResult<bool>;
+    fn read(&mut self, record: &mut bam::record::Record) -> bool;
 
     // Return pileup alignments
     fn pileup(&mut self) -> Option<bam::pileup::Pileups<bam::Reader>>;
@@ -54,13 +53,11 @@ pub trait IndexedNamedBamReader {
     fn name(&self) -> &str;
 
     // Fetch the specified region
-    fn fetch(&mut self, tid: u32, beg: u64, end: u64) -> HtslibResult<()>;
-
-    // Fetch from string
-    fn fetch_str(&mut self, region: &[u8]) -> HtslibResult<()>;
+    fn fetch<'a, T: Into<FetchDefinition<'a>>>(&mut self, fetch_definition: T)
+        -> Result<(), Error>;
 
     // Read a record into record parameter
-    fn read(&mut self, record: &mut bam::record::Record) -> HtslibResult<bool>;
+    fn read(&mut self, record: &mut bam::record::Record) -> bool;
 
     // Return pileup alignments
     fn pileup(&mut self) -> Option<bam::pileup::Pileups<bam::IndexedReader>>;
@@ -111,17 +108,20 @@ impl NamedBamReader for BamFileNamedReader {
     fn name(&self) -> &str {
         &(self.stoit_name)
     }
-    fn read(&mut self, record: &mut bam::record::Record) -> HtslibResult<bool> {
+    fn read(&mut self, record: &mut bam::record::Record) -> bool {
         let res = self.bam_reader.read(record);
-        match res {
-            Ok(true) => {
-                if !record.is_secondary() && !record.is_supplementary() {
-                    self.num_detected_primary_alignments += 1;
+        let res = match res {
+            Some(result) => match result {
+                Ok(_) => {
+                    if !record.is_secondary() && !record.is_supplementary() {
+                        self.num_detected_primary_alignments += 1;
+                    };
+                    true
                 }
-            }
-            Err(e) => panic!("Error: {:?}", e),
-            _ => {}
-        }
+                Err(e) => panic!("Error: {:?}", e),
+            },
+            None => false,
+        };
         return res;
     }
 
@@ -167,26 +167,27 @@ impl IndexedNamedBamReader for IndexedBamFileNamedReader {
     }
 
     // Fetch the specified region
-    fn fetch(&mut self, tid: u32, beg: u64, end: u64) -> HtslibResult<()> {
-        self.bam_reader.fetch(tid, beg, end)
+    fn fetch<'a, T: Into<FetchDefinition<'a>>>(
+        &mut self,
+        fetch_definition: T,
+    ) -> Result<(), Error> {
+        self.bam_reader.fetch(fetch_definition)
     }
 
-    // Fetch from string
-    fn fetch_str(&mut self, region: &[u8]) -> HtslibResult<()> {
-        self.bam_reader.fetch_str(region)
-    }
-
-    fn read(&mut self, record: &mut bam::record::Record) -> HtslibResult<bool> {
+    fn read(&mut self, record: &mut bam::record::Record) -> bool {
         let res = self.bam_reader.read(record);
-        match res {
-            Ok(true) => {
-                if !record.is_secondary() && !record.is_supplementary() {
-                    self.num_detected_primary_alignments += 1;
+        let res = match res {
+            Some(result) => match result {
+                Ok(_) => {
+                    if !record.is_secondary() && !record.is_supplementary() {
+                        self.num_detected_primary_alignments += 1;
+                    };
+                    true
                 }
-            }
-            Err(e) => panic!("Error: {:?}", e),
-            _ => {}
-        }
+                Err(e) => panic!("Error: {:?}", e),
+            },
+            None => false,
+        };
         return res;
     }
 
@@ -353,17 +354,20 @@ impl NamedBamReader for StreamingNamedBamReader {
     fn name(&self) -> &str {
         &(self.stoit_name)
     }
-    fn read(&mut self, record: &mut bam::record::Record) -> HtslibResult<bool> {
+    fn read(&mut self, record: &mut bam::record::Record) -> bool {
         let res = self.bam_reader.read(record);
-        match res {
-            Ok(true) => {
-                if !record.is_secondary() && !record.is_supplementary() {
-                    self.num_detected_primary_alignments += 1;
+        let res = match res {
+            Some(result) => match result {
+                Ok(_) => {
+                    if !record.is_secondary() && !record.is_supplementary() {
+                        self.num_detected_primary_alignments += 1;
+                    };
+                    true
                 }
-            }
-            Err(e) => panic!("Error: {:?}", e),
-            _ => {}
-        }
+                Err(e) => panic!("Error: {:?}", e),
+            },
+            None => false,
+        };
         return res;
     }
 
@@ -610,7 +614,7 @@ impl NamedBamReader for FilteredBamReader {
     fn name(&self) -> &str {
         &(self.stoit_name)
     }
-    fn read(&mut self, mut record: &mut bam::record::Record) -> HtslibResult<bool> {
+    fn read(&mut self, mut record: &mut bam::record::Record) -> bool {
         self.filtered_stream.read(&mut record)
     }
 
@@ -779,7 +783,7 @@ impl NamedBamReader for StreamingFilteredNamedBamReader {
     fn name(&self) -> &str {
         &(self.stoit_name)
     }
-    fn read(&mut self, record: &mut bam::record::Record) -> HtslibResult<bool> {
+    fn read(&mut self, record: &mut bam::record::Record) -> bool {
         self.filtered_stream.read(record)
     }
 
@@ -1139,8 +1143,8 @@ impl NamedBamReader for PlaceholderBamFileReader {
         &("placeholder")
     }
 
-    fn read(&mut self, _record: &mut bam::record::Record) -> HtslibResult<bool> {
-        Ok(false)
+    fn read(&mut self, _record: &mut bam::record::Record) -> bool {
+        false
     }
 
     fn pileup(&mut self) -> Option<bam::pileup::Pileups<bam::Reader>> {

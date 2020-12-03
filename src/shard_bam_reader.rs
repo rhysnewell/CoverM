@@ -5,10 +5,10 @@ use std::str;
 use rand::prelude::*;
 
 use rust_htslib::bam;
-use rust_htslib::bam::errors::Result as HtslibResult;
 use rust_htslib::bam::record::{Cigar, CigarString};
 use rust_htslib::bam::Read as BamRead;
 use rust_htslib::bam::Record;
+use rust_htslib::errors::Error;
 
 use mapping_parameters::ReadFormat;
 
@@ -62,8 +62,15 @@ where
             loop {
                 {
                     current_alignment = bam::Record::new();
-                    res = reader.read(&mut current_alignment);
-                    if res.expect("Failure to read from a shard BAM file") == false {
+                    let read = reader.read(&mut current_alignment);
+                    res = match read {
+                        Some(result) => match result {
+                            Ok(_) => true,
+                            Err(e) => panic!("Error: {:?}", e),
+                        },
+                        None => false,
+                    };
+                    if res == false {
                         debug!("BAM reader #{} appears to be finished", i);
                         some_finished = true;
                         break;
@@ -169,7 +176,7 @@ impl<'a, T> ReadSortedShardedBamReader<'a, T>
 where
     T: GenomeExclusion,
 {
-    fn read(&mut self, to_return: &mut bam::Record) -> HtslibResult<bool> {
+    fn read(&mut self, to_return: &mut bam::Record) -> bool {
         if self.next_record_to_return.is_some() {
             {
                 let record = self.next_record_to_return.as_ref().unwrap();
@@ -178,13 +185,13 @@ where
             self.next_record_to_return = None;
             let tid_now = to_return.tid();
             to_return.set_tid(tid_now + self.tid_offsets[self.winning_index.unwrap()]);
-            return Ok(true);
+            return true;
         } else {
             if self.previous_read_records.is_none() {
                 self.previous_read_records = self.read_a_record_set();
                 if self.previous_read_records.is_none() {
                     // All finished all the input files.
-                    return Ok(false);
+                    return false;
                 }
             }
             // Read the second set
@@ -280,7 +287,7 @@ where
             self.previous_read_records = None;
 
             // Return the first of the pair
-            return Ok(true);
+            return true;
         }
     }
 }
@@ -424,7 +431,7 @@ where
                 .expect("Failure to set BAM writer compression level - programming bug?");
             debug!("Writing records to samtools sort input FIFO..");
             let mut record = bam::Record::new();
-            while demux.read(&mut record).unwrap() == true {
+            while demux.read(&mut record) == true {
                 debug!(
                     "Writing tid {} for qname {}",
                     record.tid(),
@@ -469,17 +476,20 @@ impl NamedBamReader for ShardedBamReader {
     fn name(&self) -> &str {
         &(self.stoit_name)
     }
-    fn read(&mut self, record: &mut bam::record::Record) -> HtslibResult<bool> {
+    fn read(&mut self, record: &mut bam::record::Record) -> bool {
         let res = self.bam_reader.read(record);
-        match res {
-            Ok(true) => {
-                if !record.is_secondary() && !record.is_supplementary() {
-                    self.num_detected_primary_alignments += 1;
+        let res = match res {
+            Some(result) => match result {
+                Ok(_) => {
+                    if !record.is_secondary() && !record.is_supplementary() {
+                        self.num_detected_primary_alignments += 1;
+                    };
+                    true
                 }
-            }
-            Err(e) => panic!("Error: {:?}", e),
-            _ => {}
-        }
+                Err(e) => panic!("Error: {:?}", e),
+            },
+            None => false,
+        };
         return res;
     }
 

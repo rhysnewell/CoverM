@@ -99,11 +99,7 @@ pub fn contig_coverage<R: NamedBamReader, G: NamedBamReaderGenerator<R>, T: Cove
             };
 
         // for record in records
-        while bam_generated
-            .read(&mut record)
-            .expect("Error while reading BAM record")
-            == true
-        {
+        while bam_generated.read(&mut record) == true {
             trace!("Starting with a new read.. {:?}", record);
             if (!flag_filters.include_supplementary && record.is_supplementary())
                 || (!flag_filters.include_secondary && record.is_secondary())
