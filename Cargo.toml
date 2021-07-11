@@ -15,7 +15,7 @@ default-run = "coverm"
 
 [dependencies]
 
-bio = "0.35.0"
+bio = "0.37.0"
 rust-htslib = { version="0.38.*", default-features = false }
 clap = "2.*"
 glob = "0.3.*"
