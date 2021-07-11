@@ -8,6 +8,7 @@ mod tests {
     use std;
     use std::io::Read;
     use std::io::Write;
+    use std::str;
 
     fn assert_equal_table(expected: &str, observed: &str) -> bool {
         // assert the first lines are the same
@@ -922,6 +923,24 @@ k141_109815	362	0.6274	0.6274	0.2349").unwrap();
     }
 
     #[test]
+    fn test_dot_in_extension() {
+        // https://github.com/wwood/CoverM/issues/49
+        Assert::main_binary()
+            .with_args(&[
+                "genome",
+                "--coupled",
+                "tests/data/reads_for_seq1_and_seq2.1.fq.gz",
+                "tests/data/reads_for_seq1_and_seq2.2.fq.gz",
+                "--genome-fasta-directory",
+                "tests/data/genomes_dir/",
+                "-x",
+                ".fna",
+            ])
+            .succeeds()
+            .unwrap();
+    }
+
+    #[test]
     fn test_caches_when_reference_not_specified() {
         let td = tempfile::TempDir::new().unwrap();
         Assert::main_binary()
@@ -1160,7 +1179,7 @@ genome6	26.697144
     }
 
     #[test]
-    fn test_genome_definition() {
+    fn test_genome_definition_with_bam() {
         Assert::main_binary()
             .with_args(&[
                 "genome",
@@ -1172,6 +1191,28 @@ genome6	26.697144
             .succeeds()
             .stdout()
             .contains("Genome	7seqs.reads_for_seq1_and_seq2 Relative Abundance (%)\n")
+            .stdout()
+            .contains("genome2	53.167923\n")
+            .stdout()
+            .contains("genome5	46.832077\n")
+            .unwrap();
+    }
+
+    #[test]
+    fn test_genome_definition_with_reference() {
+        Assert::main_binary()
+            .with_args(&[
+                "genome",
+                "--genome-definition",
+                "tests/data/7seqs.definition",
+                "-r",
+                "tests/data/7seqs.fna",
+                "--interleaved",
+                "tests/data/reads_for_seq1_and_seq2.fna",
+            ])
+            .succeeds()
+            .stdout()
+            .contains("Genome	7seqs.fna/reads_for_seq1_and_seq2.fna Relative Abundance (%)\n")
             .stdout()
             .contains("genome2	53.167923\n")
             .stdout()
@@ -1236,6 +1277,47 @@ genome6	26.697144
         Assert::command(&["samtools", "view", "-H", bam.to_str().unwrap()])
             .stdout()
             .contains("PN:bwa")
+            .unwrap();
+    }
+
+    #[test]
+    fn test_reference_specified_as_directory_genome() {
+        Assert::main_binary()
+            .with_args(&[
+                "genome",
+                "--mapper",
+                "bwa-mem",
+                "--coupled",
+                "tests/data/reads_for_seq1_and_seq2.1.fq.gz",
+                "tests/data/reads_for_seq1_and_seq2.2.fq.gz",
+                "--reference",
+                "tests/data",
+                "-x",
+                "fna",
+                "-s",
+                "=",
+            ])
+            .fails()
+            .stderr()
+            .contains("should be a file, not e.g. a directory")
+            .unwrap();
+    }
+    #[test]
+    fn test_reference_not_existing_contig() {
+        Assert::main_binary()
+            .with_args(&[
+                "contig",
+                "--mapper",
+                "bwa-mem",
+                "--coupled",
+                "tests/data/reads_for_seq1_and_seq2.1.fq.gz",
+                "tests/data/reads_for_seq1_and_seq2.2.fq.gz",
+                "--reference",
+                "testsblah",
+            ])
+            .fails()
+            .stderr()
+            .contains("does not appear to exist")
             .unwrap();
     }
 
@@ -1382,9 +1464,9 @@ genome6	26.697144
             .succeeds()
             .stdout().is(
                 "Contig	ont.ref.fna/ont.reads.fq.gz RPKM	ont.ref.fna/ont.reads.fq.gz Mean	ont.ref.fna/ont.reads.fq.gz Read Count\n\
-                ctg4	1887.6234	0.02457587	6\n\
-                ctg5	717.27264	0.0041760243	3\n\
-                ctg6	126.346375	0.0021053297	1\n")
+                ctg4	1747.7994	0.024660854	5\n\
+                ctg5	796.9696	0.0041760243	3\n\
+                ctg6	140.38486	0.0021053297	1\n")
             .unwrap();
     }
 
@@ -1413,9 +1495,9 @@ genome6	26.697144
             .stdout()
             .is(
                 "Contig	ont.ref.fna/ont.reads.fq.gz RPKM	ont.ref.fna/ont.reads.fq.gz Mean	ont.ref.fna/ont.reads.fq.gz Read Count	ont.ref.fna/ont.reads.fq.gz RPKM	ont.ref.fna/ont.reads.fq.gz Mean	ont.ref.fna/ont.reads.fq.gz Read Count\n\
-                ctg4	1887.6234	0.02457587	6	1887.6234	0.02457587	6\n\
-                ctg5	717.27264	0.0041760243	3	717.27264	0.0041760243	3\n\
-                ctg6	126.346375	0.0021053297	1	126.346375	0.0021053297	1\n")
+                ctg4	1747.7994	0.024660854	5	1747.7994	0.024660854	5\n\
+                ctg5	796.9696	0.0041760243	3	796.9696	0.0041760243	3\n\
+                ctg6	140.38486	0.0021053297	1	140.38486	0.0021053297	1\n")
             .stderr()
             .contains(
                     "Running DB indexing command: \"minimap2\" \"-x\" \"map-ont\" \"-t\" \"2\" \"-d\"")
@@ -1476,9 +1558,9 @@ genome6	26.697144
             .stdout()
             .is(
                 "Contig	ont.ref.fna/ont.reads.fq.gz RPKM	ont.ref.fna/ont.reads.fq.gz Mean	ont.ref.fna/ont.reads.fq.gz Read Count\n\
-                ctg4	2202.2273	0.081332035	7\n\
-                ctg5	478.18173	0.010246328	2\n\
-                ctg6	126.346375	0.0021596688	1\n")
+                ctg4	2097.3594	0.067892104	6\n\
+                ctg5	531.31305	0.010246328	2\n\
+                ctg6	140.38486	0.0021596688	1\n")
             .stderr()
             .contains("-A 20 -t 1")
             .unwrap();
@@ -1555,40 +1637,6 @@ genome6~random_sequence_length_11003	0	0	0
     }
 
     #[test]
-    fn test_remove_minimap2_duplicated_headers_normal_sam() {
-        Assert::cargo_binary("remove_minimap2_duplicated_headers")
-            .stdin(
-                "@PG yes OK\n\
-                @SQ 1\n\
-                @SQ 2\n",
-            )
-            .succeeds()
-            .stdout()
-            .is("@PG yes OK\n\
-                @SQ 1\n\
-                @SQ 2\n")
-            .unwrap();
-    }
-
-    #[test]
-    fn test_remove_minimap2_duplicated_headers_duplicated_sam() {
-        Assert::cargo_binary("remove_minimap2_duplicated_headers")
-            .stdin(
-                "@SQ 1\n\
-                @SQ 2\n\
-                @PG yes OK\n\
-                @SQ 1\n\
-                @SQ 2\n",
-            )
-            .succeeds()
-            .stdout()
-            .is("@PG yes OK\n\
-                @SQ 1\n\
-                @SQ 2\n")
-            .unwrap();
-    }
-
-    #[test]
     fn test_genome_all_methods() {
         Assert::main_binary()
             .with_args(&[
@@ -1647,8 +1695,14 @@ genome6~random_sequence_length_11003	0	0	0
 
     #[test]
     fn test_dereplicate_output_clusters() {
-        let tf: tempfile::NamedTempFile = tempfile::NamedTempFile::new().unwrap();
-        let t = tf.path().to_str().unwrap();
+        let tf_clusters: tempfile::NamedTempFile = tempfile::NamedTempFile::new().unwrap();
+        let t_clusters = tf_clusters.path().to_str().unwrap();
+
+        let tf_reps: tempfile::NamedTempFile = tempfile::NamedTempFile::new().unwrap();
+        let t_reps = tf_reps.path().to_str().unwrap();
+
+        let td_symlink = tempfile::TempDir::new().unwrap();
+        let td_copy = tempfile::TempDir::new().unwrap();
 
         Assert::main_binary()
             .with_args(&[
@@ -1665,24 +1719,54 @@ genome6~random_sequence_length_11003	0	0	0
                 "--dereplicate",
                 "--single",
                 "tests/data/set1/1read.actually_fasta.fq",
-                "--output-dereplication-clusters",
-                t,
+                "--dereplication-output-cluster-definition",
+                t_clusters,
+                "--dereplication-output-representative-fasta-directory",
+                td_symlink.path().to_str().unwrap(),
+                "--dereplication-output-representative-fasta-directory-copy",
+                td_copy.path().to_str().unwrap(),
+                "--dereplication-output-representative-list",
+                t_reps,
             ])
             .succeeds()
             .stdout()
             .is("Genome	1read.actually_fasta.fq Covered Fraction\n\
                 1mbp	0.00232\n")
             .unwrap();
+
         let mut s: String = "".to_string();
-        std::fs::File::open(t)
+        std::fs::File::open(t_clusters)
             .unwrap()
             .read_to_string(&mut s)
             .unwrap();
         assert_eq!(
             "tests/data/set1/1mbp.fna	tests/data/set1/1mbp.fna\n\
-            tests/data/set1/1mbp.fna	tests/data/set1/500kb.fna\n",
+                tests/data/set1/1mbp.fna	tests/data/set1/500kb.fna\n",
             s
-        )
+        );
+
+        let mut s2: String = "".to_string();
+        std::fs::File::open(t_reps)
+            .unwrap()
+            .read_to_string(&mut s2)
+            .unwrap();
+        assert_eq!("tests/data/set1/1mbp.fna\n", s2);
+
+        let out = td_symlink.path().join("1mbp.fna");
+        assert!(out.exists());
+        assert!(std::fs::symlink_metadata(out)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(!td_symlink.path().join("500kbp.fna").exists());
+
+        let out2 = td_copy.path().join("1mbp.fna");
+        assert!(out2.exists());
+        assert!(!std::fs::symlink_metadata(out2)
+            .unwrap()
+            .file_type()
+            .is_symlink());
+        assert!(!td_symlink.path().join("500kbp.fna").exists());
     }
 
     #[test]
@@ -1865,6 +1949,610 @@ genome6~random_sequence_length_11003	0	0	0
             .fails()
             .stderr()
             .contains("BAM file appears to be unsorted")
+            .unwrap();
+    }
+
+    // #[test]
+    // fn test_no_zeros_bug1() {
+    //     Assert::main_binary()
+    //         .with_args(&[
+    //             "genome",
+    //             "-c",
+    //             "tests/data/rhys_bug/20120700_S3D.head100000.1.fq.gz",
+    //             "tests/data/rhys_bug/20120700_S3D.head100000.2.fq.gz",
+    //             "--genome-fasta-files",
+    //             "tests/data/rhys_bug/genomes/73.20120700_S3D.10.fna",
+    //             "tests/data/rhys_bug/genomes/73.20120700_S3D.12.fna",
+    //             "tests/data/rhys_bug/genomes/73.20120700_S3D.15.fna",
+    //             "tests/data/rhys_bug/genomes/73.20120700_S3D.16.fna",
+    //             "tests/data/rhys_bug/genomes/73.20120700_S3D.34.fna",
+    //             "tests/data/rhys_bug/genomes/73.20120700_S3D.3.fna",
+    //             "tests/data/rhys_bug/genomes/73.20120700_S3D.5.fna",
+    //             "tests/data/rhys_bug/genomes/73.20120700_S3D.7.fna",
+    //             "-t",
+    //             "8",
+    //             "-m",
+    //             "mean",
+    //             "covered_fraction",
+    //             "--min-covered-fraction",
+    //             "0.05",
+    //             "--exclude-supplementary",
+    //         ])
+    //         .succeeds()
+    //         .stdout()
+    //         .satisfies(
+    //             |observed| {
+    //                 assert_equal_table(
+    //                     "Genome	20120700_S3D.head100000.1.fq.gz Mean	20120700_S3D.head100000.1.fq.gz Covered Fraction\n\
+    //                     73.20120700_S3D.10	0.070454076	0.067262076\n\
+    //                     73.20120700_S3D.12	0	0\n\
+    //                     73.20120700_S3D.15	0	0\n\
+    //                     73.20120700_S3D.16	0	0\n\
+    //                     73.20120700_S3D.3	0	0\n\
+    //                     73.20120700_S3D.34	0.063717276	0.06055015\n\
+    //                     73.20120700_S3D.5	0.13361321	0.12273601\n\
+    //                     73.20120700_S3D.7	0.099415645	0.092869714\n\
+    //                     ",
+    //                     observed,
+    //                 )
+    //             },
+    //             "table incorrect",
+    //         )
+    //         .unwrap();
+    // }
+    //
+    // #[test]
+    // fn test_no_zeros_bug2() {
+    //     Assert::main_binary()
+    //         .with_args(&[
+    //             "genome",
+    //             "-c",
+    //             "tests/data/rhys_bug/20120700_S3D.head100000.1.fq.gz",
+    //             "tests/data/rhys_bug/20120700_S3D.head100000.2.fq.gz",
+    //             "--genome-fasta-files",
+    //             "tests/data/rhys_bug/genomes/73.20120700_S3D.10.fna",
+    //             "tests/data/rhys_bug/genomes/73.20120700_S3D.12.fna",
+    //             "tests/data/rhys_bug/genomes/73.20120700_S3D.15.fna",
+    //             "tests/data/rhys_bug/genomes/73.20120700_S3D.16.fna",
+    //             "tests/data/rhys_bug/genomes/73.20120700_S3D.34.fna",
+    //             "tests/data/rhys_bug/genomes/73.20120700_S3D.3.fna",
+    //             "tests/data/rhys_bug/genomes/73.20120700_S3D.5.fna",
+    //             "tests/data/rhys_bug/genomes/73.20120700_S3D.7.fna",
+    //             "-t",
+    //             "8",
+    //             "--no-zeros",
+    //             "-m",
+    //             "mean",
+    //             "covered_fraction",
+    //             "--min-covered-fraction",
+    //             "0.05",
+    //             "--exclude-supplementary",
+    //         ])
+    //         .succeeds()
+    //         .stdout()
+    //         .satisfies(
+    //             |observed| {
+    //                 assert_equal_table(
+    //                     "Genome	20120700_S3D.head100000.1.fq.gz Mean	20120700_S3D.head100000.1.fq.gz Covered Fraction\n\
+    //                     73.20120700_S3D.10	0.070454076	0.067262076\n\
+    //                     73.20120700_S3D.34	0.063717276	0.06055015\n\
+    //                     73.20120700_S3D.5	0.13361321	0.12273601\n\
+    //                     73.20120700_S3D.7	0.099415645	0.092869714\n\
+    //                     ",
+    //                     observed,
+    //                 )
+    //             },
+    //             "table incorrect",
+    //         )
+    //         .unwrap();
+    // }
+    //
+    // #[test]
+    // fn test_no_zeros_bug3() {
+    //     Assert::main_binary()
+    //     .with_args(&[
+    //         "genome",
+    //         "-c",
+    //         "tests/data/rhys_bug/20120700_S3D.head100000.1.fq.gz",
+    //         "tests/data/rhys_bug/20120700_S3D.head100000.2.fq.gz",
+    //         "--genome-fasta-files",
+    //         "tests/data/rhys_bug/genomes/73.20120700_S3D.10.fna",
+    //         "tests/data/rhys_bug/genomes/73.20120700_S3D.12.fna",
+    //         "tests/data/rhys_bug/genomes/73.20120700_S3D.15.fna",
+    //         "tests/data/rhys_bug/genomes/73.20120700_S3D.16.fna",
+    //         "tests/data/rhys_bug/genomes/73.20120700_S3D.34.fna",
+    //         "tests/data/rhys_bug/genomes/73.20120700_S3D.3.fna",
+    //         "tests/data/rhys_bug/genomes/73.20120700_S3D.5.fna",
+    //         "tests/data/rhys_bug/genomes/73.20120700_S3D.7.fna",
+    //         "-t",
+    //         "8",
+    //         "--no-zeros",
+    //         "-m",
+    //         "mean",
+    //         "covered_fraction",
+    //         "--min-covered-fraction",
+    //         "0.03",
+    //         "--exclude-supplementary",
+    //     ])
+    //     .succeeds()
+    //     .stdout()
+    //     .satisfies(
+    //         |observed| {
+    //             assert_equal_table(
+    //                 "Genome	20120700_S3D.head100000.1.fq.gz Mean	20120700_S3D.head100000.1.fq.gz Covered Fraction\n\
+    //                 73.20120700_S3D.10	0.070454076	0.067262076\n\
+    //                 73.20120700_S3D.15	0.035371803	0.03416976\n\
+    //                 73.20120700_S3D.16	0.031215662	0.030119542\n\
+    //                 73.20120700_S3D.3	0.03592973	0.034742467\n\
+    //                 73.20120700_S3D.34	0.063717276	0.06055015\n\
+    //                 73.20120700_S3D.5	0.13361321	0.12273601\n\
+    //                 73.20120700_S3D.7	0.099415645	0.092869714\n\
+    //                 ",
+    //                 observed,
+    //             )
+    //         },
+    //         "table incorrect",
+    //     )
+    //     .unwrap();
+    // }
+    //
+    // #[test]
+    // fn test_no_zeros_bug4() {
+    //     Assert::main_binary()
+    //     .with_args(&[
+    //         "genome",
+    //         "-c",
+    //         "tests/data/rhys_bug/20120700_S3D.head100000.1.fq.gz",
+    //         "tests/data/rhys_bug/20120700_S3D.head100000.2.fq.gz",
+    //         "--genome-fasta-files",
+    //         "tests/data/rhys_bug/genomes/73.20120700_S3D.10.fna",
+    //         "tests/data/rhys_bug/genomes/73.20120700_S3D.12.fna",
+    //         "tests/data/rhys_bug/genomes/73.20120700_S3D.15.fna",
+    //         "tests/data/rhys_bug/genomes/73.20120700_S3D.16.fna",
+    //         "tests/data/rhys_bug/genomes/73.20120700_S3D.34.fna",
+    //         "tests/data/rhys_bug/genomes/73.20120700_S3D.3.fna",
+    //         "tests/data/rhys_bug/genomes/73.20120700_S3D.5.fna",
+    //         "tests/data/rhys_bug/genomes/73.20120700_S3D.7.fna",
+    //         "-t",
+    //         "8",
+    //         //"--no-zeros",
+    //         "-m",
+    //         "mean",
+    //         "covered_fraction",
+    //         "--min-covered-fraction",
+    //         "0.03",
+    //         "--exclude-supplementary",
+    //     ])
+    //     .succeeds()
+    //     .stdout()
+    //     .satisfies(
+    //         |observed| {
+    //             assert_equal_table(
+    //                 "Genome	20120700_S3D.head100000.1.fq.gz Mean	20120700_S3D.head100000.1.fq.gz Covered Fraction\n\
+    //                 73.20120700_S3D.10	0.070454076	0.067262076\n\
+    //                 73.20120700_S3D.12	0	0\n\
+    //                 73.20120700_S3D.15	0.035371803	0.03416976\n\
+    //                 73.20120700_S3D.16	0.031215662	0.030119542\n\
+    //                 73.20120700_S3D.3	0.03592973	0.034742467\n\
+    //                 73.20120700_S3D.34	0.063717276	0.06055015\n\
+    //                 73.20120700_S3D.5	0.13361321	0.12273601\n\
+    //                 73.20120700_S3D.7	0.099415645	0.092869714\n\
+    //                 ",
+    //                 observed,
+    //             )
+    //         },
+    //         "table incorrect",
+    //     )
+    //     .unwrap();
+    // }
+
+    #[test]
+    fn test_contig_output_file() {
+        let tf: tempfile::NamedTempFile = tempfile::NamedTempFile::new().unwrap();
+        let t = tf.path().to_str().unwrap();
+
+        Assert::main_binary()
+            .with_args(&[
+                "contig",
+                "--contig-end-exclusion",
+                "0",
+                "-r",
+                "tests/data/2seqs.fasta",
+                "--output-format",
+                "sparse",
+                "--interleaved",
+                "tests/data/bad_reads.interleaved.fq",
+                "-o",
+                t,
+            ])
+            .succeeds()
+            .stdout()
+            .is("")
+            .unwrap();
+
+        let mut buf = vec![];
+        std::fs::File::open(tf.path())
+            .unwrap()
+            .read_to_end(&mut buf)
+            .unwrap();
+
+        assert_eq!(
+            "Sample\tContig\tMean\n\
+            2seqs.fasta/bad_reads.interleaved.fq\tseq1\t0.899\n\
+            2seqs.fasta/bad_reads.interleaved.fq\tseq2\t0\n",
+            str::from_utf8(&buf).unwrap()
+        )
+    }
+
+    #[test]
+    fn test_autoconcatenation_with_clashing() {
+        Assert::main_binary()
+            .with_args(&[
+                "genome",
+                "-m",
+                "mean",
+                "--genome-fasta-files",
+                "tests/data/contig_name_clashing/genome1.fna",
+                "tests/data/contig_name_clashing/genome2.fna",
+                "tests/data/contig_name_clashing/genome3.fna",
+                "--coupled",
+                "tests/data/contig_name_clashing/reads_for_genome2.1.fa",
+                "tests/data/contig_name_clashing/reads_for_genome2.2.fa",
+            ])
+            .succeeds()
+            .stdout()
+            .is("Genome	reads_for_genome2.1.fa Mean\n\
+            genome1	0\n\
+            genome2	4.8142858\n\
+            genome3	0\n\
+            ")
+            .unwrap();
+    }
+
+    #[test]
+    fn test_clashing_contig_names_with_reference_specified() {
+        Assert::main_binary()
+            .with_args(&[
+                "genome",
+                "-m",
+                "mean",
+                "--genome-fasta-files",
+                "tests/data/contig_name_clashing/genome1.fna",
+                "tests/data/contig_name_clashing/genome2.fna",
+                "tests/data/contig_name_clashing/genome3.fna",
+                "--reference",
+                "tests/data/contig_name_clashing/bad_reference.fna",
+                "--coupled",
+                "tests/data/contig_name_clashing/reads_for_genome2.1.fa",
+                "tests/data/contig_name_clashing/reads_for_genome2.2.fa",
+            ])
+            .fails()
+            .stderr()
+            .contains(
+                "The contig 'random_sequence_length_500_1' has been assigned to multiple genomes",
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn test_tpm_contig_sparse() {
+        Assert::main_binary()
+            .with_args(&[
+                "contig",
+                "--output-format",
+                "sparse",
+                "-m",
+                "mean",
+                "tpm",
+                "-b",
+                "tests/data/tpm_test.bam",
+            ])
+            .succeeds()
+            .stdout()
+            .is("Sample	Contig	Mean	TPM\n\
+                tpm_test	genome1~random_sequence_length_11000	0	0\n\
+                tpm_test	genome1~random_sequence_length_11010	0	0\n\
+                tpm_test	genome2~seq1	1.5882353	900000.0357627869\n\
+                tpm_test	genome3~random_sequence_length_11001	0	0\n\
+                tpm_test	genome4~random_sequence_length_11002	0	0\n\
+                tpm_test	genome5~seq2	0.14467005	99999.99403953552\n\
+                tpm_test	genome6~random_sequence_length_11003	0	0\n")
+            .unwrap();
+    }
+
+    #[test]
+    fn test_tpm_contig_dense() {
+        Assert::main_binary()
+            .with_args(&[
+                "contig",
+                "-m",
+                "mean",
+                "tpm",
+                "-b",
+                "tests/data/tpm_test.bam",
+            ])
+            .succeeds()
+            .stdout()
+            .is("Contig	tpm_test Mean	tpm_test TPM\n\
+                genome1~random_sequence_length_11000	0	0\n\
+                genome1~random_sequence_length_11010	0	0\n\
+                genome2~seq1	1.5882353	900000.06\n\
+                genome3~random_sequence_length_11001	0	0\n\
+                genome4~random_sequence_length_11002	0	0\n\
+                genome5~seq2	0.14467005	99999.99\n\
+                genome6~random_sequence_length_11003	0	0\n")
+            .unwrap();
+    }
+
+    #[test]
+    fn test_tpm_genome_sparse() {
+        Assert::main_binary()
+            .with_args(&[
+                "genome",
+                "--output-format",
+                "sparse",
+                "-m",
+                "mean",
+                "tpm",
+                "-b",
+                "tests/data/tpm_test.bam",
+                "-s",
+                "~",
+                "--min-covered-fraction",
+                "0",
+            ])
+            .succeeds()
+            .stdout()
+            .is("Sample	Genome	Mean	TPM\n\
+                tpm_test	genome1	0	0\n\
+                tpm_test	genome2	1.5882353	900000.0357627869\n\
+                tpm_test	genome3	0	0\n\
+                tpm_test	genome4	0	0\n\
+                tpm_test	genome5	0.14467005	99999.99403953552\n\
+                tpm_test	genome6	0	0\n")
+            .unwrap();
+    }
+
+    #[test]
+    fn test_tpm_genome_dense() {
+        Assert::main_binary()
+            .with_args(&[
+                "genome",
+                "-m",
+                "mean",
+                "tpm",
+                "-b",
+                "tests/data/tpm_test.bam",
+                "-s",
+                "~",
+                "--min-covered-fraction",
+                "0",
+            ])
+            .succeeds()
+            .stdout()
+            .is("Genome	tpm_test Mean	tpm_test TPM\n\
+            genome1	0	0\n\
+            genome2	1.5882353	900000.06\n\
+            genome3	0	0\n\
+            genome4	0	0\n\
+            genome5	0.14467005	99999.99\n\
+            genome6	0	0\n")
+            .unwrap();
+    }
+
+    #[test]
+    fn test_mismatched_read_pairs() {
+        Assert::main_binary()
+            .with_args(&[
+                "genome",
+                "-m",
+                "mean",
+                "tpm",
+                "-c",
+                "tests/data/bad_read.1.fa",
+                "tests/data/7seqs.fna",
+                "-r",
+                "tests/data/7seqs.fna",
+                "--single-genome",
+            ])
+            .fails()
+            .stderr()
+            .contains("Not continuing since when input file pairs have unequal numbers of reads")
+            .unwrap();
+    }
+
+    #[test]
+    fn test_single_genome_no_exclude_supplementary() {
+        Assert::main_binary()
+            .with_args(&[
+                "genome",
+                "-m",
+                "count",
+                "-b",
+                "tests/data/2seqs.bad_read.1.with_supplementary.bam",
+                "--single-genome",
+                "--min-covered-fraction",
+                "0",
+            ])
+            .succeeds()
+            .stdout()
+            // We only count a supplementary alignment once in read count
+            .is("Genome	2seqs.bad_read.1.with_supplementary Read Count\n\
+            genome1	20\n")
+            .unwrap();
+    }
+
+    #[test]
+    fn test_genomes_and_contigs_with_supplementary() {
+        Assert::main_binary()
+            .with_args(&[
+                "genome",
+                "-m",
+                "mean",
+                "covered_fraction",
+                "count",
+                "--genome-fasta-files",
+                "tests/data/rhys_bug/genomes/73.20120700_S3D.10.fna",
+                "tests/data/rhys_bug/genomes/73.20120700_S3D.12.fna",
+                "tests/data/rhys_bug/genomes/73.20120700_S3D.15.fna",
+                "tests/data/rhys_bug/genomes/73.20120700_S3D.16.fna",
+                "tests/data/rhys_bug/genomes/73.20120700_S3D.34.fna",
+                "tests/data/rhys_bug/genomes/73.20120700_S3D.3.fna",
+                "tests/data/rhys_bug/genomes/73.20120700_S3D.5.fna",
+                "tests/data/rhys_bug/genomes/73.20120700_S3D.7.fna",
+                "-c",
+                "tests/data/rhys_bug/20120700_S3D.stray_read1.1.fq",
+                "tests/data/rhys_bug/20120700_S3D.stray_read1.2.fq",
+                "--min-covered-fraction",
+                "0",
+            ])
+            .succeeds()
+            .stdout()
+            .satisfies(
+                |observed| {
+                    assert_equal_table(
+                        "Genome	20120700_S3D.stray_read1.1.fq Mean	20120700_S3D.stray_read1.1.fq Covered Fraction	20120700_S3D.stray_read1.1.fq Read Count\n\
+                        73.20120700_S3D.10	0.000022701126	0.00003879494	2\n\
+                        73.20120700_S3D.12	0	0	0\n\
+                        73.20120700_S3D.15	0	0	0\n\
+                        73.20120700_S3D.16	0	0	0\n\
+                        73.20120700_S3D.34	0	0	0\n\
+                        73.20120700_S3D.3	0	0	0\n\
+                        73.20120700_S3D.5	0.000043860742	0.000043714655	2\n\
+                        73.20120700_S3D.7	0	0	0\n\
+                        ",
+                        observed,
+                    )
+                },
+                "table incorrect",
+            )
+            .stderr()
+            .contains("found 4 reads mapped out of 4 total (100.00%)")
+            .unwrap();
+    }
+
+    #[test]
+    fn test_genomes_and_contigs_without_supplementary() {
+        Assert::main_binary()
+            .with_args(&[
+                "genome",
+                "-m",
+                "mean",
+                "covered_fraction",
+                "count",
+                "--genome-fasta-files",
+                "tests/data/rhys_bug/genomes/73.20120700_S3D.10.fna",
+                "tests/data/rhys_bug/genomes/73.20120700_S3D.12.fna",
+                "tests/data/rhys_bug/genomes/73.20120700_S3D.15.fna",
+                "tests/data/rhys_bug/genomes/73.20120700_S3D.16.fna",
+                "tests/data/rhys_bug/genomes/73.20120700_S3D.34.fna",
+                "tests/data/rhys_bug/genomes/73.20120700_S3D.3.fna",
+                "tests/data/rhys_bug/genomes/73.20120700_S3D.5.fna",
+                "tests/data/rhys_bug/genomes/73.20120700_S3D.7.fna",
+                "-c",
+                "tests/data/rhys_bug/20120700_S3D.stray_read1.1.fq",
+                "tests/data/rhys_bug/20120700_S3D.stray_read1.2.fq",
+                "--min-covered-fraction",
+                "0",
+                "--exclude-supplementary"
+            ])
+            .succeeds()
+            .stdout()
+            .satisfies(
+                |observed| {
+                    assert_equal_table(
+                        "Genome	20120700_S3D.stray_read1.1.fq Mean	20120700_S3D.stray_read1.1.fq Covered Fraction	20120700_S3D.stray_read1.1.fq Read Count\n\
+                        73.20120700_S3D.10	0.000008399416	0.000024585164	2\n\
+                        73.20120700_S3D.12	0	0	0\n\
+                        73.20120700_S3D.15	0	0	0\n\
+                        73.20120700_S3D.16	0	0	0\n\
+                        73.20120700_S3D.34	0	0	0\n\
+                        73.20120700_S3D.3	0	0	0\n\
+                        73.20120700_S3D.5	0.000043860742	0.000043714655	2\n\
+                        73.20120700_S3D.7	0	0	0\n\
+                        ",
+                        observed,
+                    )
+                },
+                "table incorrect",
+            )
+            .stderr()
+            .contains("found 4 reads mapped out of 4 total (100.00%)")
+            .unwrap();
+    }
+
+    #[test]
+    fn test_genomes_separator_with_supplementary() {
+        Assert::main_binary()
+            .with_args(&[
+                "genome",
+                "-m",
+                "mean",
+                "covered_fraction",
+                "count",
+                "-r",
+                "tests/data/rhys_bug/genomes/73.20120700_S3D.10.fna",
+                "-s",
+                "_",
+                "-c",
+                "tests/data/rhys_bug/20120700_S3D.stray_read1.1.fq",
+                "tests/data/rhys_bug/20120700_S3D.stray_read1.2.fq",
+                "--min-covered-fraction",
+                "0",
+            ])
+            .succeeds()
+            .stdout()
+            .satisfies(
+                |observed| {
+                    assert_equal_table(
+                        "Genome	73.20120700_S3D.10.fna/20120700_S3D.stray_read1.1.fq Mean	73.20120700_S3D.10.fna/20120700_S3D.stray_read1.1.fq Covered Fraction	73.20120700_S3D.10.fna/20120700_S3D.stray_read1.1.fq Read Count\n\
+                        73.20120700	0.000022701126	0.00003879494	2\n\
+                        ",
+                        observed,
+                    )
+                },
+                "table incorrect",
+            )
+            .stderr()
+            .contains("found 2 reads mapped out of 4 total (50.00%)")
+            .unwrap();
+    }
+
+    #[test]
+    fn test_genomes_separator_without_supplementary() {
+        Assert::main_binary()
+            .with_args(&[
+                "genome",
+                "-m",
+                "mean",
+                "covered_fraction",
+                "count",
+                "-r",
+                "tests/data/rhys_bug/genomes/73.20120700_S3D.10.fna",
+                "-s",
+                "_",
+                "-c",
+                "tests/data/rhys_bug/20120700_S3D.stray_read1.1.fq",
+                "tests/data/rhys_bug/20120700_S3D.stray_read1.2.fq",
+                "--min-covered-fraction",
+                "0",
+                "--exclude-supplementary",
+            ])
+            .succeeds()
+            .stdout()
+            .satisfies(
+                |observed| {
+                    assert_equal_table(
+                        "Genome	73.20120700_S3D.10.fna/20120700_S3D.stray_read1.1.fq Mean	73.20120700_S3D.10.fna/20120700_S3D.stray_read1.1.fq Covered Fraction	73.20120700_S3D.10.fna/20120700_S3D.stray_read1.1.fq Read Count\n\
+                        73.20120700	0.000008399416	0.000024585164	2\n\
+                        ",
+                        observed,
+                    )
+                },
+                "table incorrect",
+            )
+            .stderr()
+            .contains("found 2 reads mapped out of 4 total (50.00%)")
             .unwrap();
     }
 }

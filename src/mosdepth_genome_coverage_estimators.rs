@@ -48,6 +48,12 @@ pub enum CoverageEstimator {
         num_mapped_reads: u64,
         min_fraction_covered_bases: f32,
     },
+    TPMCoverageEstimator {
+        total_bases: u64,
+        num_covered_bases: u64,
+        num_mapped_reads: u64,
+        min_fraction_covered_bases: f32,
+    },
     VarianceGenomeCoverageEstimator {
         counts: Vec<u64>,
         observed_contig_length: u64,
@@ -82,6 +88,7 @@ impl CoverageEstimator {
             }
             CoverageEstimator::NumCoveredBasesCoverageEstimator { .. } => vec!["Covered Bases"],
             CoverageEstimator::RPKMCoverageEstimator { .. } => vec!["RPKM"],
+            CoverageEstimator::TPMCoverageEstimator { .. } => vec!["TPM"],
             CoverageEstimator::VarianceGenomeCoverageEstimator { .. } => vec!["Variance"],
             CoverageEstimator::ReferenceLengthCalculator { .. } => vec!["Length"],
             CoverageEstimator::ReadCountCalculator { .. } => vec!["Read Count"],
@@ -147,6 +154,14 @@ impl CoverageEstimator {
     }
     pub fn new_estimator_rpkm(min_fraction_covered_bases: f32) -> CoverageEstimator {
         CoverageEstimator::RPKMCoverageEstimator {
+            total_bases: 0,
+            num_covered_bases: 0,
+            num_mapped_reads: 0,
+            min_fraction_covered_bases: min_fraction_covered_bases,
+        }
+    }
+    pub fn new_estimator_tpm(min_fraction_covered_bases: f32) -> CoverageEstimator {
+        CoverageEstimator::TPMCoverageEstimator {
             total_bases: 0,
             num_covered_bases: 0,
             num_mapped_reads: 0,
@@ -293,6 +308,12 @@ impl MosdepthGenomeCoverageEstimator for CoverageEstimator {
                 ref mut num_covered_bases,
                 ref mut num_mapped_reads,
                 ..
+            }
+            | CoverageEstimator::TPMCoverageEstimator {
+                ref mut total_bases,
+                ref mut num_covered_bases,
+                ref mut num_mapped_reads,
+                ..
             } => {
                 *total_bases = 0;
                 *num_covered_bases = 0;
@@ -432,6 +453,12 @@ impl MosdepthGenomeCoverageEstimator for CoverageEstimator {
                 ref mut num_covered_bases,
                 ref mut num_mapped_reads,
                 ..
+            }
+            | CoverageEstimator::TPMCoverageEstimator {
+                ref mut total_bases,
+                ref mut num_covered_bases,
+                ref mut num_mapped_reads,
+                ..
             } => {
                 *num_mapped_reads += num_mapped_reads_in_contig;
                 let len = ups_and_downs.len();
@@ -477,31 +504,34 @@ impl MosdepthGenomeCoverageEstimator for CoverageEstimator {
                 min_fraction_covered_bases,
                 exclude_mismatches,
             } => {
-                debug!(
-                    "Calculating coverage with unobserved {:?}, \
-                        total bases {}, num_covered_bases {}, total_count {}, \
-                        total_mismatches {}",
-                    unobserved_contig_lengths,
-                    total_bases,
-                    num_covered_bases,
-                    total_count,
-                    total_mismatches
-                );
                 let final_total_bases = *total_bases
                     + CoverageEstimator::calculate_unobserved_bases(
                         unobserved_contig_lengths,
                         *contig_end_exclusion,
                     );
+                debug!(
+                    "Calculating coverage with unobserved {:?}, \
+                        total bases {}, num_covered_bases {}, total_count {}, \
+                        total_mismatches {}, final_total_bases {}",
+                    unobserved_contig_lengths,
+                    total_bases,
+                    num_covered_bases,
+                    total_count,
+                    total_mismatches,
+                    final_total_bases,
+                );
                 if final_total_bases == 0
                     || (*num_covered_bases as f32 / final_total_bases as f32)
                         < *min_fraction_covered_bases
                 {
                     return 0.0;
                 } else {
-                    return match exclude_mismatches {
+                    let calculated_coverage = match exclude_mismatches {
                         true => (*total_count - (*total_mismatches as u64)) as f32,
                         false => *total_count as f32,
                     } / final_total_bases as f32;
+                    debug!("Found mean coverage {}", calculated_coverage);
+                    return calculated_coverage;
                 }
             }
             CoverageEstimator::TrimmedMeanGenomeCoverageEstimator {
@@ -669,6 +699,32 @@ impl MosdepthGenomeCoverageEstimator for CoverageEstimator {
                     };
                 }
             }
+            CoverageEstimator::TPMCoverageEstimator {
+                total_bases,
+                num_covered_bases,
+                num_mapped_reads,
+                min_fraction_covered_bases,
+            } => {
+                let final_total_bases: u64 =
+                    *total_bases + unobserved_contig_lengths.iter().sum::<u64>();
+                if final_total_bases == 0
+                    || (*num_covered_bases as f32 / final_total_bases as f32)
+                        < *min_fraction_covered_bases
+                {
+                    return 0.0;
+                } else {
+                    // Here we do not know the number of mapped reads total.
+                    // Instead we divide by that later.
+                    debug!("TPM: {} {}", num_mapped_reads, final_total_bases);
+                    return match final_total_bases == 0 {
+                        true => 0.0,
+                        false => {
+                            ((*num_mapped_reads as f64).ln() - (final_total_bases as f64).ln())
+                                .exp() as f32
+                        }
+                    };
+                }
+            }
             CoverageEstimator::VarianceGenomeCoverageEstimator {
                 observed_contig_length,
                 ref mut counts,
@@ -797,6 +853,12 @@ impl MosdepthGenomeCoverageEstimator for CoverageEstimator {
                 num_mapped_reads: _,
                 min_fraction_covered_bases,
             } => CoverageEstimator::new_estimator_rpkm(*min_fraction_covered_bases),
+            CoverageEstimator::TPMCoverageEstimator {
+                total_bases: _,
+                num_covered_bases: _,
+                num_mapped_reads: _,
+                min_fraction_covered_bases,
+            } => CoverageEstimator::new_estimator_tpm(*min_fraction_covered_bases),
             CoverageEstimator::VarianceGenomeCoverageEstimator {
                 observed_contig_length: _,
                 counts: _,
@@ -827,6 +889,7 @@ impl MosdepthGenomeCoverageEstimator for CoverageEstimator {
             | CoverageEstimator::CoverageFractionGenomeCoverageEstimator { .. }
             | CoverageEstimator::NumCoveredBasesCoverageEstimator { .. }
             | CoverageEstimator::RPKMCoverageEstimator { .. }
+            | CoverageEstimator::TPMCoverageEstimator { .. }
             | CoverageEstimator::VarianceGenomeCoverageEstimator { .. }
             | CoverageEstimator::ReferenceLengthCalculator { .. }
             | CoverageEstimator::ReadCountCalculator { .. }
@@ -861,6 +924,7 @@ impl MosdepthGenomeCoverageEstimator for CoverageEstimator {
             | CoverageEstimator::CoverageFractionGenomeCoverageEstimator { .. }
             | CoverageEstimator::NumCoveredBasesCoverageEstimator { .. }
             | CoverageEstimator::RPKMCoverageEstimator { .. }
+            | CoverageEstimator::TPMCoverageEstimator { .. }
             | CoverageEstimator::VarianceGenomeCoverageEstimator { .. }
             | CoverageEstimator::ReadCountCalculator { .. }
             | CoverageEstimator::ReadsPerBaseCalculator { .. } => {
@@ -909,6 +973,12 @@ impl MosdepthGenomeCoverageEstimator for CoverageEstimator {
                 ..
             }
             | CoverageEstimator::RPKMCoverageEstimator {
+                total_bases: _,
+                num_covered_bases: _,
+                num_mapped_reads,
+                ..
+            }
+            | CoverageEstimator::TPMCoverageEstimator {
                 total_bases: _,
                 num_covered_bases: _,
                 num_mapped_reads,

@@ -3,7 +3,6 @@ use std::io::Read;
 use std::process;
 use std::sync::atomic::{compiler_fence, Ordering};
 
-use external_command_checker;
 use filter::*;
 use mapping_index_maintenance::MappingIndex;
 use mapping_parameters::ReadFormat;
@@ -12,9 +11,9 @@ use rust_htslib::bam::{FetchDefinition, Read as BamRead};
 use rust_htslib::errors::Error;
 use FlagFilter;
 
-use bird_tool_utils::command;
 use nix::sys::stat;
 use nix::unistd;
+use rust_htslib::errors::Result as HtslibResult;
 use std::path::Path;
 use tempdir::TempDir;
 use tempfile;
@@ -24,7 +23,7 @@ pub trait NamedBamReader {
     fn name(&self) -> &str;
 
     // Read a record into record parameter
-    fn read(&mut self, record: &mut bam::record::Record) -> bool;
+    fn read(&mut self, record: &mut bam::record::Record) -> Option<HtslibResult<()>>;
 
     // Return pileup alignments
     fn pileup(&mut self) -> Option<bam::pileup::Pileups<bam::Reader>>;
@@ -108,20 +107,12 @@ impl NamedBamReader for BamFileNamedReader {
     fn name(&self) -> &str {
         &(self.stoit_name)
     }
-    fn read(&mut self, record: &mut bam::record::Record) -> bool {
+
+    fn read(&mut self, record: &mut bam::record::Record) -> Option<HtslibResult<()>> {
         let res = self.bam_reader.read(record);
-        let res = match res {
-            Some(result) => match result {
-                Ok(_) => {
-                    if !record.is_secondary() && !record.is_supplementary() {
-                        self.num_detected_primary_alignments += 1;
-                    };
-                    true
-                }
-                Err(e) => panic!("Error: {:?}", e),
-            },
-            None => false,
-        };
+        if res == Some(Ok(())) && !record.is_secondary() && !record.is_supplementary() {
+            self.num_detected_primary_alignments += 1;
+        }
         return res;
     }
 
@@ -237,17 +228,19 @@ pub struct StreamingNamedBamReader {
     log_file_descriptions: Vec<String>,
     log_files: Vec<tempfile::NamedTempFile>,
     num_detected_primary_alignments: u64,
+    minimap2_log_file_index: Option<usize>,
 }
 
 pub struct StreamingNamedBamReaderGenerator {
-    pub stoit_name: String,
-    pub tempdir: TempDir,
-    pub fifo_path: std::path::PathBuf,
-    pub cache_path: String,
-    pub pre_processes: Vec<std::process::Command>,
-    pub command_strings: Vec<String>,
-    pub log_file_descriptions: Vec<String>,
-    pub log_files: Vec<tempfile::NamedTempFile>,
+    stoit_name: String,
+    tempdir: TempDir,
+    cache_path: String,
+    fifo_path: std::path::PathBuf,
+    pre_processes: Vec<std::process::Command>,
+    command_strings: Vec<String>,
+    log_file_descriptions: Vec<String>,
+    log_files: Vec<tempfile::NamedTempFile>,
+    minimap2_log_file_index: Option<usize>,
 }
 
 impl NamedBamReaderGenerator<StreamingNamedBamReader> for StreamingNamedBamReaderGenerator {
@@ -287,6 +280,7 @@ impl NamedBamReaderGenerator<StreamingNamedBamReader> for StreamingNamedBamReade
             log_file_descriptions: self.log_file_descriptions,
             log_files: self.log_files,
             num_detected_primary_alignments: 0,
+            minimap2_log_file_index: self.minimap2_log_file_index,
         };
     }
 }
@@ -310,7 +304,7 @@ pub fn complete_processes(
         if failed || log_enabled!(log::Level::Debug) {
             if failed {
                 failed_any = true;
-                error!("Error when running mapping process: {:?}", command_strings);
+                error!("Error when running mapping process. Exitstatus was {:?}. Command run was: {:?}", es, command_strings);
             } else {
                 debug!("Successfully finished process {:?}", process);
             }
@@ -338,8 +332,7 @@ pub fn complete_processes(
         }
     }
     if failed_any {
-        error!("Cannot continue since mapping failed.");
-        process::exit(1);
+        panic!("Cannot continue since mapping failed.");
     }
     debug!("Process finished without error.");
 
@@ -354,20 +347,12 @@ impl NamedBamReader for StreamingNamedBamReader {
     fn name(&self) -> &str {
         &(self.stoit_name)
     }
-    fn read(&mut self, record: &mut bam::record::Record) -> bool {
+
+    fn read(&mut self, record: &mut bam::record::Record) -> Option<HtslibResult<()>> {
         let res = self.bam_reader.read(record);
-        let res = match res {
-            Some(result) => match result {
-                Ok(_) => {
-                    if !record.is_secondary() && !record.is_supplementary() {
-                        self.num_detected_primary_alignments += 1;
-                    };
-                    true
-                }
-                Err(e) => panic!("Error: {:?}", e),
-            },
-            None => false,
-        };
+        if res == Some(Ok(())) && !record.is_secondary() && !record.is_supplementary() {
+            self.num_detected_primary_alignments += 1;
+        }
         return res;
     }
 
@@ -384,14 +369,33 @@ impl NamedBamReader for StreamingNamedBamReader {
     }
 
     fn finish(self) {
-        debug!("Finishing NamedBamReader...");
+        // Check minimap2 didn't complain about unequal numbers of reads
+        match self.minimap2_log_file_index {
+            None => {}
+            Some(log_file_index) => {
+                let mut contents = String::new();
+                std::fs::File::open(&self.log_files[log_file_index])
+                    .expect("Failed to read minimap2 log file")
+                    .read_to_string(&mut contents)
+                    .expect("Failed to read minimap2 log file to string");
+                if contents.contains("query files have different number of records") {
+                    error!("The STDERR for the minimap2 part was: {}", contents);
+                    panic!(
+                        "Not continuing since when input file pairs have \
+                        unequal numbers of reads this usually means \
+                        incorrect / corrupt files were specified"
+                    );
+                }
+            }
+        };
+
         complete_processes(
             self.processes,
             self.command_strings,
             self.log_file_descriptions,
             self.log_files,
             Some(self.tempdir),
-        )
+        );
     }
 
     fn set_threads(&mut self, n_threads: usize) {
@@ -435,7 +439,7 @@ pub fn generate_indexed_named_bam_readers_from_bam_files(
                 bam::index::build(
                     path,
                     Some(&format!("{}.bai", path).as_str()),
-                    bam::index::Type::BAI,
+                    bam::index::Type::Bai,
                     threads,
                 )
                 .expect(&format!("Unable to index bam at {}", &path));
@@ -525,7 +529,7 @@ pub fn generate_named_bam_readers_from_reads(
         .expect("Failed to create tempfile as samtools sort prefix");
     let cmd_string = format!(
         "set -e -o pipefail; \
-         {} 2>{} {}\
+         {} 2>{} \
          | samtools sort -T '{}' -l0 -@ {} 2>{} \
          {}",
         // Mapping program
@@ -534,14 +538,6 @@ pub fn generate_named_bam_readers_from_reads(
             .path()
             .to_str()
             .expect("Failed to convert tempfile path to str"),
-        // remove extraneous @SQ lines
-        match mapping_program {
-            MappingProgram::BWA_MEM | MappingProgram::NGMLR_ONT | MappingProgram::NGMLR_PB => {
-                ""
-            }
-            // Required because of https://github.com/lh3/minimap2/issues/527
-            _ => " | remove_minimap2_duplicated_headers",
-        },
         // samtools
         bwa_sort_prefix
             .path()
@@ -560,6 +556,17 @@ pub fn generate_named_bam_readers_from_reads(
     cmd.arg("-c")
         .arg(&cmd_string)
         .stderr(std::process::Stdio::piped());
+
+    // Required because of https://github.com/wwood/CoverM/issues/58
+    let minimap2_log_file_index = match mapping_program {
+        MappingProgram::BWA_MEM | MappingProgram::NGMLR_ONT | MappingProgram::NGMLR_PB => None,
+        // Required because of https://github.com/lh3/minimap2/issues/527
+        MappingProgram::MINIMAP2_SR
+        | MappingProgram::MINIMAP2_ONT
+        | MappingProgram::MINIMAP2_PB
+        | MappingProgram::MINIMAP2_ASS
+        | MappingProgram::MINIMAP2_NO_PRESET => Some(0),
+    };
 
     let mut log_descriptions = vec![
         format!("{:?}", mapping_program).to_string(),
@@ -601,6 +608,7 @@ pub fn generate_named_bam_readers_from_reads(
         command_strings: vec![format!("bash -c \"{}\"", cmd_string)],
         log_file_descriptions: log_descriptions,
         log_files: log_files,
+        minimap2_log_file_index: minimap2_log_file_index,
     };
 }
 
@@ -614,7 +622,8 @@ impl NamedBamReader for FilteredBamReader {
     fn name(&self) -> &str {
         &(self.stoit_name)
     }
-    fn read(&mut self, mut record: &mut bam::record::Record) -> bool {
+
+    fn read(&mut self, mut record: &mut bam::record::Record) -> Option<HtslibResult<()>> {
         self.filtered_stream.read(&mut record)
     }
 
@@ -783,7 +792,8 @@ impl NamedBamReader for StreamingFilteredNamedBamReader {
     fn name(&self) -> &str {
         &(self.stoit_name)
     }
-    fn read(&mut self, record: &mut bam::record::Record) -> bool {
+
+    fn read(&mut self, record: &mut bam::record::Record) -> Option<HtslibResult<()>> {
         self.filtered_stream.read(record)
     }
 
@@ -935,7 +945,7 @@ pub fn generate_bam_maker_generator_from_reads(
         .expect("Failed to create tempfile as samtools sort prefix");
     let cmd_string = format!(
         "set -e -o pipefail; \
-         {} 2>{} {} \
+         {} 2>{} \
          | samtools sort -T '{}' -l0 -@ {} 2>{} \
          | samtools view {} -b -@ {} -o '{}' 2>{}",
         // Mapping program
@@ -944,14 +954,6 @@ pub fn generate_bam_maker_generator_from_reads(
             .path()
             .to_str()
             .expect("Failed to convert tempfile path to str"),
-        // remove extraneous @SQ lines
-        match mapping_program {
-            MappingProgram::BWA_MEM | MappingProgram::NGMLR_ONT | MappingProgram::NGMLR_PB => {
-                ""
-            }
-            // Required because of https://github.com/lh3/minimap2/issues/527
-            _ => " | remove_minimap2_duplicated_headers",
-        },
         // samtools
         bwa_sort_prefix
             .path()
@@ -1076,39 +1078,29 @@ pub fn build_mapping_command(
         ReadFormat::Single => format!("'{}'", read1_path),
     };
 
-    match mapping_program {
-        MappingProgram::BWA_MEM => {
-            return format!(
-                "{} {} -t {} {} '{}' {}",
-                "bwa mem".to_string(),
-                mapping_options.unwrap_or(""),
-                threads,
-                read_params1,
-                reference,
-                read_params2
-            )
-        }
-        MappingProgram::NGMLR_ONT | MappingProgram::NGMLR_PB => {
-            return format!(
-                "ngmlr --bam-fix -t {} -x {} {} -r {} -q {}",
-                threads,
-                match mapping_program {
-                    MappingProgram::NGMLR_ONT => "ont",
-                    MappingProgram::NGMLR_PB => "pb",
-                    _ => unreachable!(),
-                },
-                mapping_options.unwrap_or(""),
-                reference,
-                read_params2
-            );
-        }
-        _ => {
-            let split_prefix = tempfile::NamedTempFile::new().expect(&format!(
-                "Failed to create {:?} minimap2 split_prefix file",
-                mapping_program
-            ));
-            return format!(
-                "{} {} -t {} -2 {} '{}' {}",
+    return format!(
+        "{} {} -t {} {} '{}' {}",
+        match mapping_program {
+            MappingProgram::BWA_MEM => "bwa-mem2 mem".to_string(),
+            MappingProgram::NGMLR_ONT | MappingProgram::NGMLR_PB => {
+                return format!(
+                    "ngmlr --bam-fix -t {} -x {} {} -r {} -q {}",
+                    threads,
+                    match mapping_program {
+                        MappingProgram::NGMLR_ONT => "ont",
+                        MappingProgram::NGMLR_PB => "pb",
+                        _ => unreachable!(),
+                    },
+                    mapping_options.unwrap_or(""),
+                    reference,
+                    read_params2
+                );
+            }
+            _ => {
+                let split_prefix = tempfile::NamedTempFile::new().expect(&format!(
+                    "Failed to create {:?} minimap2 split_prefix file",
+                    mapping_program
+                ));
                 format!(
                     "minimap2 --split-prefix {} -a {}",
                     split_prefix
@@ -1116,22 +1108,22 @@ pub fn build_mapping_command(
                         .to_str()
                         .expect("Failed to convert split prefix tempfile path to str"),
                     match mapping_program {
-                        MappingProgram::MINIMAP2_SR => "-x sr --secondary=yes",
+                        MappingProgram::MINIMAP2_SR => "-x sr",
                         MappingProgram::MINIMAP2_ONT => "-x map-ont",
                         MappingProgram::MINIMAP2_PB => "-x map-pb",
                         MappingProgram::MINIMAP2_ASS => "--paf-no-hit -a -x asm5 -r2k",
                         MappingProgram::MINIMAP2_NO_PRESET => "",
                         _ => unreachable!(),
                     }
-                ),
-                mapping_options.unwrap_or(""),
-                threads,
-                read_params1,
-                reference,
-                read_params2
-            );
-        }
-    }
+                )
+            }
+        },
+        mapping_options.unwrap_or(""),
+        threads,
+        read_params1,
+        reference,
+        read_params2
+    );
 }
 
 pub struct PlaceholderBamFileReader {
@@ -1143,8 +1135,8 @@ impl NamedBamReader for PlaceholderBamFileReader {
         &("placeholder")
     }
 
-    fn read(&mut self, _record: &mut bam::record::Record) -> bool {
-        false
+    fn read(&mut self, _record: &mut bam::record::Record) -> Option<HtslibResult<()>> {
+        None
     }
 
     fn pileup(&mut self) -> Option<bam::pileup::Pileups<bam::Reader>> {

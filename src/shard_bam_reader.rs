@@ -5,10 +5,10 @@ use std::str;
 use rand::prelude::*;
 
 use rust_htslib::bam;
-use rust_htslib::bam::record::{Cigar, CigarString};
+use rust_htslib::bam::record::{Aux, Cigar, CigarString};
 use rust_htslib::bam::Read as BamRead;
 use rust_htslib::bam::Record;
-use rust_htslib::errors::Error;
+use rust_htslib::errors::Result as HtslibResult;
 
 use mapping_parameters::ReadFormat;
 
@@ -55,38 +55,35 @@ where
         let mut some_unfinished = false;
         let mut some_finished = false;
         let mut record;
-        let mut res;
         let mut current_alignment;
         for (i, reader) in self.shard_bam_readers.iter_mut().enumerate() {
             // loop until there is a primary alignment or the BAM file ends.
             loop {
                 {
                     current_alignment = bam::Record::new();
-                    let read = reader.read(&mut current_alignment);
-                    res = match read {
-                        Some(result) => match result {
-                            Ok(_) => true,
-                            Err(e) => panic!("Error: {:?}", e),
-                        },
-                        None => false,
-                    };
-                    if res == false {
-                        debug!("BAM reader #{} appears to be finished", i);
-                        some_finished = true;
-                        break;
+
+                    match reader.read(&mut current_alignment) {
+                        None => {
+                            debug!("BAM reader #{} appears to be finished", i);
+                            some_finished = true;
+                            break;
+                        }
+                        Some(Ok(())) => {}
+                        Some(e) => {
+                            panic!("EFailure to read from a shard BAM file: {:?}", e)
+                        }
                     }
                 }
 
                 {
                     record = current_alignment.clone();
                     if !record.is_paired() {
-                        error!(
+                        panic!(
                             "This code can only handle paired-end \
                                 input (at the moment), sorry. Found \
                                 record {:?}",
                             record
                         );
-                        process::exit(1);
                     }
                     if !record.is_secondary() && !record.is_supplementary() {
                         some_unfinished = true;
@@ -97,7 +94,7 @@ where
                             }
                             Some(prev) => {
                                 if prev != str::from_utf8(record.qname()).unwrap().to_string() {
-                                    error!(
+                                    panic!(
                                         "BAM files do not appear to be \
                                               properly sorted by read name. \
                                               Expected read name {:?} from a \
@@ -106,7 +103,6 @@ where
                                         prev,
                                         str::from_utf8(record.qname()).unwrap().to_string()
                                     );
-                                    process::exit(1);
                                 }
                             }
                         }
@@ -119,8 +115,7 @@ where
         }
         // check we are properly finished.
         if some_unfinished && some_finished {
-            error!("Unexpectedly one BAM file input finished while another had further reads");
-            process::exit(1);
+            panic!("Unexpectedly one BAM file input finished while another had further reads");
         }
         debug!("Read records {:?}", current_alignments);
         return match some_unfinished {
@@ -149,18 +144,17 @@ where
         to.set_mpos(from.mpos());
         to.set_insert_size(from.insert_size());
         to.set_tid(from.tid());
-        match &from.aux("NM".as_bytes()) {
-            Some(aux) => {
+        match from.aux("NM".as_bytes()) {
+            Ok(aux) => {
                 to.push_aux("NM".as_bytes(), aux);
             }
-            None => {
+            _ => {
                 if from.tid() >= 0 && from.cigar_len() != 0 {
-                    error!(
+                    panic!(
                         "record {:?} with name {} had no NM tag",
                         from,
                         str::from_utf8(from.qname()).unwrap()
                     );
-                    process::exit(1);
                 }
             }
         }
@@ -222,16 +216,36 @@ where
                             // Unlike BWA-MEM, Minimap2 does not have AS tags
                             // when the read is unmapped.
                             if !aln1.is_unmapped() {
-                                score += aln1.aux(b"AS")
+                                score += match aln1.aux(b"AS")
                                     .expect(&format!(
                                         "Record {:#?} (read1) unexpectedly did not have AS tag, which is needed for \
-                                        ranking pairs of alignments", aln1.qname())).integer();
+                                        ranking pairs of alignments", aln1.qname())) {
+                                    Aux::I8(val) => val as i64,
+                                    Aux::U8(val) => val as i64,
+                                    Aux::I16(val) => val as i64,
+                                    Aux::U16(val) => val as i64,
+                                    Aux::I32(val) => val as i64,
+                                    Aux::U32(val) => val as i64,
+                                    Aux::Float(val) => val as i64,
+                                    Aux::Double(val) => val as i64,
+                                    _ => panic!("Unexpected Aux tag type")
+                                };
                             }
                             if !second_read_alignments[i].is_unmapped() {
-                                score += second_read_alignments[i].aux(b"AS")
+                                score += match second_read_alignments[i].aux(b"AS")
                                     .expect(&format!(
-                                        "Record {:#?} (read2) unexpectedly did not have AS tag, which is needed for \
-                                        ranking pairs of alignments", aln1.qname())).integer();
+                                        "Record {:#?} (read1) unexpectedly did not have AS tag, which is needed for \
+                                        ranking pairs of alignments", aln1.qname())) {
+                                    Aux::I8(val) => val as i64,
+                                    Aux::U8(val) => val as i64,
+                                    Aux::I16(val) => val as i64,
+                                    Aux::U16(val) => val as i64,
+                                    Aux::I32(val) => val as i64,
+                                    Aux::U32(val) => val as i64,
+                                    Aux::Float(val) => val as i64,
+                                    Aux::Double(val) => val as i64,
+                                    _ => panic!("Unexpected Aux tag type")
+                                };
                             }
                             if max_score.is_none() || score > max_score.unwrap() {
                                 max_score = Some(score);
@@ -251,8 +265,7 @@ where
             } else if winning_indices.len() == 1 {
                 winning_index = winning_indices[0];
             } else {
-                error!("CoverM cannot currently deal with reads that only map to excluded genomes");
-                process::exit(1);
+                panic!("CoverM cannot currently deal with reads that only map to excluded genomes");
             }
             debug!(
                 "Choosing winning index {} from winner pool {:?}",
@@ -421,7 +434,7 @@ where
             let mut writer = bam::Writer::from_path(
                 &sort_input_fifo_path,
                 &new_header,
-                rust_htslib::bam::Format::BAM,
+                rust_htslib::bam::Format::Bam,
             )
             .expect("Failed to open BAM to write to samtools sort process");
             // Do not compress since these records are just read back in again -
@@ -431,6 +444,7 @@ where
                 .expect("Failure to set BAM writer compression level - programming bug?");
             debug!("Writing records to samtools sort input FIFO..");
             let mut record = bam::Record::new();
+
             while demux.read(&mut record) == true {
                 debug!(
                     "Writing tid {} for qname {}",
@@ -476,20 +490,12 @@ impl NamedBamReader for ShardedBamReader {
     fn name(&self) -> &str {
         &(self.stoit_name)
     }
-    fn read(&mut self, record: &mut bam::record::Record) -> bool {
+
+    fn read(&mut self, record: &mut bam::record::Record) -> Option<HtslibResult<()>> {
         let res = self.bam_reader.read(record);
-        let res = match res {
-            Some(result) => match result {
-                Ok(_) => {
-                    if !record.is_secondary() && !record.is_supplementary() {
-                        self.num_detected_primary_alignments += 1;
-                    };
-                    true
-                }
-                Err(e) => panic!("Error: {:?}", e),
-            },
-            None => false,
-        };
+        if res == Some(Ok(())) && !record.is_secondary() && !record.is_supplementary() {
+            self.num_detected_primary_alignments += 1;
+        }
         return res;
     }
 
@@ -646,7 +652,7 @@ pub fn generate_named_sharded_bam_readers_from_reads(
         .expect("Failed to create tempfile as samtools sort prefix");
     let cmd_string = format!(
         "set -e -o pipefail; \
-         {} 2>{} {}\
+         {} 2>{}\
          | samtools sort -n -T '{}' -l0 -@ {} 2>{} \
          {}",
         // Mapping
@@ -655,14 +661,6 @@ pub fn generate_named_sharded_bam_readers_from_reads(
             .path()
             .to_str()
             .expect("Failed to convert tempfile path to str"),
-        // remove extraneous @SQ lines
-        match mapping_program {
-            MappingProgram::BWA_MEM => {
-                ""
-            }
-            // Required because of https://github.com/lh3/minimap2/issues/527
-            _ => " | remove_minimap2_duplicated_headers",
-        },
         // samtools
         bwa_sort_prefix
             .path()
@@ -740,7 +738,7 @@ mod tests {
         let mut reader = gen.start();
         assert_eq!("stoiter".to_string(), reader.stoit_name);
         let mut r = bam::Record::new();
-        reader.bam_reader.read(&mut r).unwrap();
+        reader.bam_reader.read(&mut r).expect("").expect("");
         println!("{}", str::from_utf8(r.qname()).unwrap());
         println!("{}", r.tid());
 

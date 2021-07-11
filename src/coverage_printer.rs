@@ -1,7 +1,9 @@
 use std;
+use std::io::Write;
 use std::process;
 
 use coverage_takers::*;
+use OutputWriter;
 use ReadsMapped;
 
 pub enum CoveragePrinter {
@@ -15,13 +17,14 @@ pub enum CoveragePrinter {
 }
 
 impl CoveragePrinter {
-    pub fn finalise_printing<'a>(
+    pub fn finalise_printing(
         &mut self,
-        cached_coverage_taker: &'a CoverageTakerType<'a>,
-        print_stream: &mut dyn std::io::Write,
+        cached_coverage_taker: &CoverageTakerType,
+        print_stream: &mut OutputWriter,
         reads_mapped_per_sample: Option<&Vec<ReadsMapped>>,
         columns_to_normalise: &Vec<usize>,
         rpkm_column: Option<usize>,
+        tpm_column: Option<usize>,
     ) {
         match self {
             CoveragePrinter::StreamedCoveragePrinter => {}
@@ -32,6 +35,7 @@ impl CoveragePrinter {
                     reads_mapped_per_sample,
                     &columns_to_normalise,
                     rpkm_column,
+                    tpm_column,
                 );
             }
             CoveragePrinter::DenseCachedCoveragePrinter {
@@ -47,6 +51,7 @@ impl CoveragePrinter {
                     reads_mapped_per_sample,
                     &columns_to_normalise,
                     rpkm_column,
+                    tpm_column,
                 );
             }
             CoveragePrinter::MetabatAdjustedCoveragePrinter => {
@@ -120,7 +125,7 @@ impl CoveragePrinter {
         &mut self,
         entry_type_str: &str,
         estimator_headers_vec: Vec<String>,
-        print_stream: &mut dyn std::io::Write,
+        mut print_stream: OutputWriter,
     ) {
         match self {
             CoveragePrinter::StreamedCoveragePrinter
@@ -148,12 +153,13 @@ impl CoveragePrinter {
     }
 }
 
-pub fn print_sparse_cached_coverage_taker<'a>(
-    cached_coverage_taker: &'a CoverageTakerType<'a>,
+pub fn print_sparse_cached_coverage_taker(
+    cached_coverage_taker: &CoverageTakerType,
     print_stream: &mut dyn std::io::Write,
     reads_mapped_per_sample: Option<&Vec<ReadsMapped>>,
     columns_to_normalise: &Vec<usize>,
     rpkm_column: Option<usize>,
+    tpm_column: Option<usize>,
 ) {
     let iterator = cached_coverage_taker.generate_iterator();
 
@@ -201,6 +207,18 @@ pub fn print_sparse_cached_coverage_taker<'a>(
                             coverage_multipliers[*i] = Some(fraction_mapped);
                         }
                     }
+                    // Calculate RPKM total for TPM calculation
+                    match tpm_column {
+                        None => {}
+                        Some(i) => {
+                            let mut total_coverage = 0.0;
+                            for coverage_set in current_stoit_coverages {
+                                total_coverage += coverage_set[i]
+                            }
+                            coverage_totals[i] = Some(total_coverage);
+                        }
+                    }
+                    debug!("Found coverage totals: {:?}", coverage_totals);
 
                     // Print unmapped entries at the top
                     let stoit = &stoit_names[current_stoit_index];
@@ -274,6 +292,29 @@ pub fn print_sparse_cached_coverage_taker<'a>(
                                     }
                                 )
                                 .unwrap();
+                            } else if tpm_column == Some(i) {
+                                debug!(
+                                    "Writing TPM with coverage {} and reads_mapped_per_sample {:?}",
+                                    coverages[i], reads_mapped_per_sample
+                                );
+                                let num_mapped_reads = reads_mapped_per_sample.unwrap()
+                                    [current_stoit_index]
+                                    .num_mapped_reads;
+                                write!(
+                                    print_stream,
+                                    "\t{}",
+                                    match num_mapped_reads == 0 {
+                                        true => 0.0,
+                                        // TPM can be calculated from RPKM - see
+                                        // https://haroldpimentel.wordpress.com/2014/05/08/what-the-fpkm-a-review-rna-seq-expression-units/
+                                        false =>
+                                            (coverages[i].ln() - coverage_totals[i].unwrap().ln())
+                                                .exp()
+                                                as f64
+                                                * (10u64.pow(6) as f64),
+                                    }
+                                )
+                                .unwrap();
                             } else {
                                 write!(print_stream, "\t{}", coverages[i]).unwrap();
                             }
@@ -305,14 +346,15 @@ pub fn print_sparse_cached_coverage_taker<'a>(
     }
 }
 
-pub fn print_dense_cached_coverage_taker<'a>(
+pub fn print_dense_cached_coverage_taker(
     entry_type: &str,
     estimator_headers: &Vec<String>,
-    cached_coverage_taker: &'a CoverageTakerType<'a>,
+    cached_coverage_taker: &CoverageTakerType,
     print_stream: &mut dyn std::io::Write,
     reads_mapped_per_sample: Option<&Vec<ReadsMapped>>,
     columns_to_normalise: &Vec<usize>,
     rpkm_column: Option<usize>,
+    tpm_column: Option<usize>,
 ) {
     match &cached_coverage_taker {
         CoverageTakerType::CachedSingleFloatCoverageTaker {
@@ -398,6 +440,16 @@ pub fn print_dense_cached_coverage_taker<'a>(
                             None => Some(ecs.coverages[*i]),
                         }
                 }
+                match tpm_column {
+                    None => {}
+                    Some(i) => {
+                        coverage_totals[ecs.stoit_index as usize][i] =
+                            match coverage_totals[ecs.stoit_index as usize][i] {
+                                Some(total) => Some(total + ecs.coverages[i]),
+                                None => Some(ecs.coverages[i]),
+                            }
+                    }
+                }
 
                 // If first entry in stoit, make room
                 if stoit_by_entry_by_coverage.len() <= ecs.stoit_index {
@@ -454,6 +506,30 @@ pub fn print_dense_cached_coverage_taker<'a>(
                                 }
                             )
                             .unwrap();
+                        } else if tpm_column == Some(i) {
+                            debug!(
+                                "Writing TPM with coverage {} and reads_mapped_per_sample {:?}",
+                                coverages[i], reads_mapped_per_sample,
+                            );
+                            let num_mapped_reads =
+                                reads_mapped_per_sample.unwrap()[stoit_i].num_mapped_reads;
+                            write!(
+                                print_stream,
+                                "\t{}",
+                                match num_mapped_reads == 0 {
+                                    true => 0.0,
+                                    // TPM can be calculated from RPKM - see
+                                    // https://haroldpimentel.wordpress.com/2014/05/08/what-the-fpkm-a-review-rna-seq-expression-units/
+                                    false =>
+                                        (coverages[i].ln()
+                                            - coverage_totals[ecs.stoit_index as usize][i]
+                                                .unwrap()
+                                                .ln())
+                                        .exp()
+                                            * (10u64.pow(6) as f32),
+                                }
+                            )
+                            .unwrap();
                         } else {
                             write!(print_stream, "\t{}", cov).unwrap();
                         }
@@ -470,7 +546,9 @@ pub fn print_dense_cached_coverage_taker<'a>(
 mod tests {
     use super::*;
     use std::io::Cursor;
+    use std::io::Read;
     use std::str;
+    use OutputWriter;
 
     #[test]
     fn test_dense_cached_printer_hello_world() {
@@ -487,6 +565,7 @@ mod tests {
             &mut stream,
             None,
             &vec![],
+            None,
             None,
         );
         assert_eq!(
@@ -514,6 +593,7 @@ mod tests {
                 num_reads: 2,
             }]),
             &vec![0],
+            None,
             None,
         );
         assert_eq!(
@@ -548,13 +628,26 @@ mod tests {
         c.add_single_coverage(22.1);
         c.add_single_coverage(22.2);
 
-        let mut stream = Cursor::new(Vec::new());
+        let tf: tempfile::NamedTempFile = tempfile::NamedTempFile::new().unwrap();
+        let t = tf.path().to_str().unwrap();
         let mut metabat = CoveragePrinter::MetabatAdjustedCoveragePrinter;
-        metabat.finalise_printing(&c, &mut stream, None, &vec![], None);
+        metabat.finalise_printing(
+            &c,
+            &mut OutputWriter::generate(Some(t)),
+            None,
+            &vec![],
+            None,
+            None,
+        );
+        let mut buf = vec![];
+        std::fs::File::open(tf.path())
+            .unwrap()
+            .read_to_end(&mut buf)
+            .unwrap();
         assert_eq!(
             "contigName\tcontigLen\ttotalAvgDepth\tstoit1.bam\tstoit1.bam-var\tstoit2.bam\tstoit2.bam-var\n\
              contig1\t1024\t11.1\t1.1\t1.2\t21.1\t21.2\n\
              contig2\t1025\t12.1\t2.1\t2.2\t22.1\t22.2\n",
-            str::from_utf8(stream.get_ref()).unwrap());
+             str::from_utf8(&buf).unwrap());
     }
 }

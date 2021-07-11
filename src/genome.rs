@@ -1,7 +1,8 @@
 use rust_htslib::bam;
-use rust_htslib::bam::record::Cigar;
+use rust_htslib::bam::record::{Aux, Cigar};
 use std;
 use std::process;
+use FlagFilter;
 
 use std::collections::BTreeSet;
 use std::str;
@@ -22,7 +23,7 @@ pub fn mosdepth_genome_coverage_with_contig_names<
     contigs_and_genomes: &GenomesAndContigs,
     coverage_taker: &mut T,
     print_zero_coverage_genomes: bool,
-    proper_pairs_only: bool,
+    flag_filters: &FlagFilter,
     coverage_estimators: &mut Vec<CoverageEstimator>,
     threads: usize,
 ) -> Vec<ReadsMapped> {
@@ -107,11 +108,19 @@ pub fn mosdepth_genome_coverage_with_contig_names<
         let mut num_mapped_reads_in_current_contig: u64 = 0;
         let mut total_edit_distance_in_current_contig: u64 = 0;
         let mut total_indels_in_current_contig: u64 = 0;
-        while bam_generated.read(&mut record) == true {
-            if record.is_secondary() || record.is_supplementary() {
-                continue;
+        loop {
+            match bam_generated.read(&mut record) {
+                None => {
+                    break;
+                }
+                Some(Ok(())) => {}
+                Some(e) => {
+                    panic!("Error reading BAM record: {:?}", e)
+                }
             }
-            if proper_pairs_only && !record.is_proper_pair() {
+
+            if !flag_filters.passes(&record) {
+                trace!("Skipping read based on flag filtering");
                 continue;
             }
             let original_tid = record.tid();
@@ -206,8 +215,18 @@ pub fn mosdepth_genome_coverage_with_contig_names<
                         // looking at the NM tag.
 
                         total_edit_distance_in_current_contig += match record.aux("NM".as_bytes()) {
-                            Some(aux) => aux.integer() as u64,
-                            None => {
+                            Ok(aux) => match aux {
+                                Aux::I8(val) => val.abs() as u64,
+                                Aux::U8(val) => val as u64,
+                                Aux::I16(val) => val.abs() as u64,
+                                Aux::U16(val) => val as u64,
+                                Aux::I32(val) => val.abs() as u64,
+                                Aux::U32(val) => val as u64,
+                                Aux::Float(val) => val.abs() as u64,
+                                Aux::Double(val) => val.abs() as u64,
+                                _ => panic!("Unexpected Aux tag type"),
+                            },
+                            _ => {
                                 error!(
                                     "Mapping record encountered that does not have an 'NM' \r
                                             auxiliary tag in the SAM/BAM format. This is required \
@@ -373,6 +392,12 @@ fn print_last_genomes<T: CoverageTaker>(
             );
             for (i, ref mut coverage_estimator) in coverage_estimators.iter_mut().enumerate() {
                 let coverage = coverages[i];
+                debug!(
+                    "Found coverage {} for genome {} i.e. coverage estimator {}",
+                    coverage,
+                    &str::from_utf8(last_genome.unwrap()).unwrap(),
+                    i
+                );
 
                 // Print coverage of previous genome
                 if coverage > 0.0 {
@@ -384,10 +409,13 @@ fn print_last_genomes<T: CoverageTaker>(
                         9,
                     );
                 }
-                coverage_estimator.setup();
             }
             coverage_taker.finish_entry();
         }
+    }
+    // Reset all estimators
+    for coverage_estimator in coverage_estimators.iter_mut() {
+        coverage_estimator.setup();
     }
     if print_zero_coverage_genomes && !single_genome {
         print_previous_zero_coverage_genomes2(
@@ -414,11 +442,15 @@ pub fn mosdepth_genome_coverage<
     coverage_taker: &mut T,
     print_zero_coverage_genomes: bool,
     coverage_estimators: &mut Vec<CoverageEstimator>,
-    proper_pairs_only: bool,
+    flag_filters: &FlagFilter,
     single_genome: bool,
     threads: usize,
 ) -> Vec<ReadsMapped> {
     let mut reads_mapped_vector = vec![];
+    debug!(
+        "Calculating coverage using a split character {}",
+        str::from_utf8(&[split_char]).unwrap()
+    );
     for bam_generator in bam_readers {
         let mut bam_generated = bam_generator.start();
         bam_generated.set_threads(threads);
@@ -495,11 +527,19 @@ pub fn mosdepth_genome_coverage<
         let mut num_mapped_reads_in_current_genome: u64 = 0;
         let mut total_edit_distance_in_current_contig: u64 = 0;
         let mut total_indels_in_current_contig: u64 = 0;
-        while bam_generated.read(&mut record) == true {
-            if record.is_secondary() || record.is_supplementary() {
-                continue;
+        loop {
+            match bam_generated.read(&mut record) {
+                None => {
+                    break;
+                }
+                Some(Ok(())) => {}
+                Some(e) => {
+                    panic!("Error reading BAM record: {:?}", e)
+                }
             }
-            if proper_pairs_only && !record.is_proper_pair() {
+
+            if !flag_filters.passes(&record) {
+                trace!("Skipping read based on flag filtering");
                 continue;
             }
             let original_tid = record.tid();
@@ -627,8 +667,9 @@ pub fn mosdepth_genome_coverage<
                             &header,
                         );
                         debug!(
-                            "Setting unobserved contig length to be {:?}",
-                            unobserved_contig_length_and_first_tid.unobserved_contig_lengths
+                            "Setting unobserved contig length to be {:?} for genome {}",
+                            unobserved_contig_length_and_first_tid.unobserved_contig_lengths,
+                            str::from_utf8(&current_genome).unwrap()
                         );
                     }
 
@@ -646,8 +687,12 @@ pub fn mosdepth_genome_coverage<
                     "read name {:?}",
                     std::str::from_utf8(record.qname()).unwrap()
                 );
-                num_mapped_reads_in_current_contig += 1;
-                num_mapped_reads_in_current_genome += 1;
+                if !record.is_supplementary() {
+                    // Supplementary reads are marked primary, so exclude
+                    // supplementary mappings to avoid double counting.
+                    num_mapped_reads_in_current_contig += 1;
+                    num_mapped_reads_in_current_genome += 1;
+                }
                 let mut cursor: usize = record.pos() as usize;
                 for cig in record.cigar().iter() {
                     trace!("Found cigar {:} from {}", cig, cursor);
@@ -684,8 +729,18 @@ pub fn mosdepth_genome_coverage<
                 // Determine the number of mismatching bases in this read by
                 // looking at the NM tag.
                 total_edit_distance_in_current_contig += match record.aux("NM".as_bytes()) {
-                    Some(aux) => aux.integer() as u64,
-                    None => {
+                    Ok(aux) => match aux {
+                        Aux::I8(val) => val.abs() as u64,
+                        Aux::U8(val) => val as u64,
+                        Aux::I16(val) => val.abs() as u64,
+                        Aux::U16(val) => val as u64,
+                        Aux::I32(val) => val.abs() as u64,
+                        Aux::U32(val) => val as u64,
+                        Aux::Float(val) => val.abs() as u64,
+                        Aux::Double(val) => val.abs() as u64,
+                        _ => panic!("Unexpected Aux tag type"),
+                    },
+                    _ => {
                         error!(
                             "Mapping record encountered that does not have an 'NM' \
                                     auxiliary tag in the SAM/BAM format. This is required \
@@ -913,7 +968,8 @@ mod tests {
     use rust_htslib::bam::Read;
     use shard_bam_reader::*;
     use std::collections::HashSet;
-    use std::io::Cursor;
+    use std::io::Read as _;
+    use OutputWriter;
 
     fn test_streaming_with_stream<R: NamedBamReader, G: NamedBamReaderGenerator<R>>(
         expected: &str,
@@ -924,25 +980,36 @@ mod tests {
         proper_pairs_only: bool,
         single_genome: bool,
     ) -> Vec<ReadsMapped> {
-        let mut stream = Cursor::new(Vec::new());
         let res;
+        let tf: tempfile::NamedTempFile = tempfile::NamedTempFile::new().unwrap();
+        let t = tf.path().to_str().unwrap();
         {
             let mut coverage_taker =
                 CoverageTakerType::new_single_float_coverage_streaming_coverage_printer(
-                    &mut stream,
+                    OutputWriter::generate(Some(t)),
                 );
+            let flags = FlagFilter {
+                include_improper_pairs: !proper_pairs_only,
+                include_secondary: true,
+                include_supplementary: true,
+            };
             res = mosdepth_genome_coverage(
                 bam_readers,
                 separator,
                 &mut coverage_taker,
                 print_zero_coverage_contigs,
                 coverage_estimators,
-                proper_pairs_only,
+                &flags,
                 single_genome,
                 1,
             );
         }
-        assert_eq!(expected, str::from_utf8(stream.get_ref()).unwrap());
+        let mut buf = vec![];
+        std::fs::File::open(tf.path())
+            .unwrap()
+            .read_to_end(&mut buf)
+            .unwrap();
+        assert_eq!(expected, str::from_utf8(&buf).unwrap());
         return res;
     }
 
@@ -958,23 +1025,35 @@ mod tests {
         proper_pairs_only: bool,
         single_genome: bool,
     ) -> Vec<ReadsMapped> {
-        let mut stream = Cursor::new(Vec::new());
         let res;
+        let tf: tempfile::NamedTempFile = tempfile::NamedTempFile::new().unwrap();
+        let t = tf.path().to_str().unwrap();
         {
-            let mut coverage_taker =
-                CoverageTakerType::new_pileup_coverage_coverage_printer(&mut stream);
+            let mut coverage_taker = CoverageTakerType::new_pileup_coverage_coverage_printer(
+                OutputWriter::generate(Some(t)),
+            );
+            let flags = FlagFilter {
+                include_improper_pairs: !proper_pairs_only,
+                include_secondary: false,
+                include_supplementary: false,
+            };
             res = mosdepth_genome_coverage(
                 bam_readers,
                 separator,
                 &mut coverage_taker,
                 print_zero_coverage_contigs,
                 coverage_estimators,
-                proper_pairs_only,
+                &flags,
                 single_genome,
                 1,
             );
         }
-        assert_eq!(expected, str::from_utf8(stream.get_ref()).unwrap());
+        let mut buf = vec![];
+        std::fs::File::open(tf.path())
+            .unwrap()
+            .read_to_end(&mut buf)
+            .unwrap();
+        assert_eq!(expected, str::from_utf8(&buf).unwrap());
         return res;
     }
 
@@ -986,24 +1065,35 @@ mod tests {
         proper_pairs_only: bool,
         coverage_estimators: &mut Vec<CoverageEstimator>,
     ) -> Vec<ReadsMapped> {
-        let mut stream = Cursor::new(Vec::new());
         let res;
+        let tf: tempfile::NamedTempFile = tempfile::NamedTempFile::new().unwrap();
+        let t = tf.path().to_str().unwrap();
         {
             let mut coverage_taker =
                 CoverageTakerType::new_single_float_coverage_streaming_coverage_printer(
-                    &mut stream,
+                    OutputWriter::generate(Some(t)),
                 );
+            let flags = FlagFilter {
+                include_improper_pairs: !proper_pairs_only,
+                include_secondary: false,
+                include_supplementary: false,
+            };
             res = mosdepth_genome_coverage_with_contig_names(
                 bam_readers,
                 geco,
                 &mut coverage_taker,
                 print_zero_coverage_contigs,
-                proper_pairs_only,
+                &flags,
                 coverage_estimators,
                 1,
             );
         }
-        assert_eq!(expected, str::from_utf8(stream.get_ref()).unwrap());
+        let mut buf = vec![];
+        std::fs::File::open(tf.path())
+            .unwrap()
+            .read_to_end(&mut buf)
+            .unwrap();
+        assert_eq!(expected, str::from_utf8(&buf).unwrap());
         return res;
     }
 
@@ -1018,22 +1108,34 @@ mod tests {
         proper_pairs_only: bool,
         coverage_estimators: &mut Vec<CoverageEstimator>,
     ) -> Vec<ReadsMapped> {
-        let mut stream = Cursor::new(Vec::new());
         let res;
+        let tf: tempfile::NamedTempFile = tempfile::NamedTempFile::new().unwrap();
+        let t = tf.path().to_str().unwrap();
         {
-            let mut coverage_taker =
-                CoverageTakerType::new_pileup_coverage_coverage_printer(&mut stream);
+            let mut coverage_taker = CoverageTakerType::new_pileup_coverage_coverage_printer(
+                OutputWriter::generate(Some(t)),
+            );
+            let flags = FlagFilter {
+                include_improper_pairs: !proper_pairs_only,
+                include_secondary: false,
+                include_supplementary: false,
+            };
             res = mosdepth_genome_coverage_with_contig_names(
                 bam_readers,
                 geco,
                 &mut coverage_taker,
                 print_zero_coverage_contigs,
-                proper_pairs_only,
+                &flags,
                 coverage_estimators,
                 1,
             );
         }
-        assert_eq!(expected, str::from_utf8(stream.get_ref()).unwrap());
+        let mut buf = vec![];
+        std::fs::File::open(tf.path())
+            .unwrap()
+            .read_to_end(&mut buf)
+            .unwrap();
+        assert_eq!(expected, str::from_utf8(&buf).unwrap());
         return res;
     }
 

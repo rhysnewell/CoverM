@@ -1,13 +1,12 @@
+use rust_htslib::bam;
+use rust_htslib::bam::record::{Aux, Cigar};
+use rust_htslib::bam::Read;
+use rust_htslib::errors::Result as HtslibResult;
 use std::collections::BTreeMap;
 use std::process;
 use std::str;
 use std::sync::Arc;
-
 use FlagFilter;
-
-use rust_htslib::bam;
-use rust_htslib::bam::record::Cigar;
-use rust_htslib::bam::Read;
 
 pub struct ReferenceSortedBamFilter {
     first_set: BTreeMap<Arc<String>, Arc<bam::Record>>,
@@ -67,28 +66,19 @@ impl ReferenceSortedBamFilter {
 }
 
 impl ReferenceSortedBamFilter {
-    pub fn read(&mut self, mut record: &mut bam::record::Record) -> bool {
+    pub fn read(&mut self, mut record: &mut bam::record::Record) -> Option<HtslibResult<()>> {
         // if doing only singles, remove filter them and return
         if self.filter_single_reads && !self.filter_pairs {
             loop {
                 let res = self.reader.read(&mut record);
-
-                let res = match res {
-                    Some(result) => match result {
-                        Ok(_) => true,
-                        Err(e) => panic!("Error: {:?}", e),
-                    },
-                    None => false,
-                };
-
-                if res == false {
-                    return false;
+                if res == None {
+                    return res;
                 }
                 if !record.is_supplementary() && !record.is_secondary() {
                     self.num_detected_primary_alignments += 1;
                 }
                 if record.is_unmapped() && !self.filter_out {
-                    return true;
+                    return res;
                 }
                 let passes_filter1 = !record.is_unmapped()
                     && (self.flag_filters.include_supplementary || !record.is_supplementary())
@@ -102,7 +92,7 @@ impl ReferenceSortedBamFilter {
                     );
                     if (passes_filter2 && self.filter_out) || (!passes_filter2 && !self.filter_out)
                     {
-                        return true;
+                        return res;
                     }
                 }
                 // else this read shall not pass, try another
@@ -111,127 +101,123 @@ impl ReferenceSortedBamFilter {
         // else doing pairs, so do as before except maybe filter out single reads too
         else {
             if self.known_next_read.is_none() {
-                while let Some(result) = self.reader.read(&mut record) {
-                    match result {
-                        Ok(_) => {
-                            debug!("record: {:?}", record);
+                while self.reader.read(&mut record) == Some(Ok(())) {
+                    debug!("record: {:?}", record);
 
-                            debug!(
-                                "passed flags, {} {} {}",
-                                record.is_secondary(),
-                                record.is_supplementary(),
-                                !record.is_proper_pair()
+                    debug!(
+                        "passed flags, {} {} {}",
+                        record.is_secondary(),
+                        record.is_supplementary(),
+                        !record.is_proper_pair()
+                    );
+
+                    if !record.is_supplementary() && !record.is_secondary() {
+                        self.num_detected_primary_alignments += 1;
+                    }
+
+                    if record.is_unmapped() && !self.filter_out {
+                        return Some(Ok(()));
+                    }
+
+                    // TODO: make usage ensure flag_filtering when mapping
+                    if record.is_secondary() || record.is_supplementary() {
+                        continue;
+                    }
+                    if !record.is_proper_pair() {
+                        if self.filter_out {
+                            continue;
+                        } else {
+                            return Some(Ok(()));
+                        }
+                    }
+
+                    // if a new reference ID is encountered, instantiate a new first read set
+                    if record.tid() != self.current_reference {
+                        if self.first_set.len() > 0 {
+                            warn!(
+                                "After processing reference tid '{}', there were pairs \
+                           of reads marked as proper, but appear to be improperly \
+                           mapped since only one read was found mapping to this \
+                           reference",
+                                self.current_reference
                             );
+                        }
+                        self.current_reference = record.tid();
+                        self.first_set = BTreeMap::new();
+                    }
 
-                            if !record.is_supplementary() && !record.is_secondary() {
-                                self.num_detected_primary_alignments += 1;
+                    let qname = String::from(
+                        str::from_utf8(record.qname())
+                            .expect("UTF8 error in conversion of read name"),
+                    );
+
+                    match self.first_set.remove(&qname) {
+                        None => {
+                            debug!("Processing qname1 {}", qname);
+                            if record.mtid() == self.current_reference {
+                                // if tlen is +ve and < threshold
+                                // add to first read set
+                                self.first_set
+                                    .insert(Arc::new(qname), Arc::new(record.clone()));
+                            // continue the loop without returning as we need to see the second record
                             }
-
-                            if record.is_unmapped() && !self.filter_out {
-                                return true;
-                            }
-
-                            // TODO: make usage ensure flag_filtering when mapping
-                            if record.is_secondary() || record.is_supplementary() {
-                                continue;
-                            }
-                            if !record.is_proper_pair() {
-                                if self.filter_out {
-                                    continue;
-                                } else {
-                                    return true;
-                                }
-                            }
-
-                            // if a new reference ID is encountered, instantiate a new first read set
-                            if record.tid() != self.current_reference {
-                                if self.first_set.len() > 0 {
-                                    warn!(
-                                        "After processing reference tid '{}', there were pairs \
-                                   of reads marked as proper, but appear to be improperly \
-                                   mapped since only one read was found mapping to this \
-                                   reference",
-                                        self.current_reference
-                                    );
-                                }
-                                self.current_reference = record.tid();
-                                self.first_set = BTreeMap::new();
-                            }
-
-                            let qname = String::from(
-                                str::from_utf8(record.qname())
-                                    .expect("UTF8 error in conversion of read name"),
-                            );
-
-                            match self.first_set.remove(&qname) {
-                                None => {
-                                    debug!("Processing qname1 {}", qname);
-                                    if record.mtid() == self.current_reference {
-                                        // if tlen is +ve and < threshold
-                                        // add to first read set
-                                        self.first_set
-                                            .insert(Arc::new(qname), Arc::new(record.clone()));
-                                    // continue the loop without returning as we need to see the second record
-                                    }
-                                    // pairs from different contigs are ignored.
-                                    else {
-                                        warn!(
-                                            "Found a mapping record marked as being a proper pair, \
-                                     but mtid != tid, indicating it was an improper pair. Record was {:?}",
-                                            record);
-                                    }
-                                }
-                                Some(record1) => {
-                                    debug!("Testing qname2 {}", qname);
-                                    // if filtering single and paired reads then
-                                    // both must pass QC, as well as the pair
-                                    // together.
-                                    let passes_filter = (!self.filter_single_reads
-                                        || (single_read_passes_filter(
-                                            &record1,
-                                            self.min_aligned_length_single,
-                                            self.min_percent_identity_single,
-                                            self.min_aligned_percent_single,
-                                        ) && single_read_passes_filter(
-                                            &record,
-                                            self.min_aligned_length_single,
-                                            self.min_percent_identity_single,
-                                            self.min_aligned_percent_single,
-                                        )))
-                                        && read_pair_passes_filter(
-                                            &record,
-                                            &record1,
-                                            self.min_aligned_length_pair,
-                                            self.min_percent_identity_pair,
-                                            self.min_aligned_percent_pair,
-                                        );
-                                    if (passes_filter && self.filter_out)
-                                        || (!passes_filter && !self.filter_out)
-                                    {
-                                        debug!("Read pair passed QC");
-                                        self.known_next_read = Some(record.clone());
-                                        record.clone_from(
-                                            &Arc::try_unwrap(record1)
-                                                .expect("Cannot get strong RC pointer"),
-                                        );
-                                        debug!("Returning..");
-                                        return true;
-                                    } else {
-                                        debug!("Read pair did not pass QC");
-                                    }
-                                }
+                            // pairs from different contigs are ignored.
+                            else {
+                                warn!(
+                                    "Found a mapping record marked as being a proper pair, \
+                                    but mtid != tid, indicating it was an improper pair. Record was {:?}",
+                                    record
+                                );
                             }
                         }
-                        Err(e) => panic!("Error parsing filtered BAM {}", e),
+                        Some(record1) => {
+                            debug!("Testing qname2 {}", qname);
+                            // if filtering single and paired reads then
+                            // both must pass QC, as well as the pair
+                            // together.
+                            let passes_filter = (!self.filter_single_reads
+                                || (single_read_passes_filter(
+                                    &record1,
+                                    self.min_aligned_length_single,
+                                    self.min_percent_identity_single,
+                                    self.min_aligned_percent_single,
+                                ) && single_read_passes_filter(
+                                    &record,
+                                    self.min_aligned_length_single,
+                                    self.min_percent_identity_single,
+                                    self.min_aligned_percent_single,
+                                )))
+                                && read_pair_passes_filter(
+                                    &record,
+                                    &record1,
+                                    self.min_aligned_length_pair,
+                                    self.min_percent_identity_pair,
+                                    self.min_aligned_percent_pair,
+                                );
+                            if (passes_filter && self.filter_out)
+                                || (!passes_filter && !self.filter_out)
+                            {
+                                debug!("Read pair passed QC");
+                                self.known_next_read = Some(record.clone());
+                                record.clone_from(
+                                    &Arc::try_unwrap(record1)
+                                        .expect("Cannot get strong ARC pointer"),
+                                );
+                                debug!("Returning..");
+                                return Some(Ok(()));
+                            } else {
+                                debug!("Read pair did not pass QC");
+                            }
+                        }
                     }
                 }
 
                 // No more records, we are finished.
-                return false;
+                return None;
             } else {
                 record.clone_from(self.known_next_read.as_ref().unwrap());
                 self.known_next_read = None;
-                return true;
+                return Some(Ok(()));
             }
         }
     }
@@ -254,8 +240,18 @@ fn single_read_passes_filter(
     min_aligned_percent_single: f32,
 ) -> bool {
     let edit_distance1 = match record.aux(b"NM") {
-        Some(i) => i.integer(),
-        None => {
+        Ok(i) => match i {
+            Aux::I8(val) => val as i64,
+            Aux::U8(val) => val as i64,
+            Aux::I16(val) => val as i64,
+            Aux::U16(val) => val as i64,
+            Aux::I32(val) => val as i64,
+            Aux::U32(val) => val as i64,
+            Aux::Float(val) => val as i64,
+            Aux::Double(val) => val as i64,
+            _ => panic!("Unexpected Aux tag type"),
+        },
+        _ => {
             error!(
                 "Alignment of read {:?} did not have an NM aux tag",
                 record.qname()
@@ -295,8 +291,18 @@ fn read_pair_passes_filter(
     min_aligned_percent_pair: f32,
 ) -> bool {
     let edit_distance1 = match record1.aux(b"NM") {
-        Some(i) => i.integer(),
-        None => {
+        Ok(i) => match i {
+            Aux::I8(val) => val as i64,
+            Aux::U8(val) => val as i64,
+            Aux::I16(val) => val as i64,
+            Aux::U16(val) => val as i64,
+            Aux::I32(val) => val as i64,
+            Aux::U32(val) => val as i64,
+            Aux::Float(val) => val as i64,
+            Aux::Double(val) => val as i64,
+            _ => panic!("Unexpected Aux tag type"),
+        },
+        _ => {
             error!(
                 "Alignment of read {:?} did not have an NM aux tag",
                 record1.qname()
@@ -305,8 +311,18 @@ fn read_pair_passes_filter(
         }
     };
     let edit_distance2 = match record2.aux(b"NM") {
-        Some(i) => i.integer(),
-        None => {
+        Ok(i) => match i {
+            Aux::I8(val) => val as i64,
+            Aux::U8(val) => val as i64,
+            Aux::I16(val) => val as i64,
+            Aux::U16(val) => val as i64,
+            Aux::I32(val) => val as i64,
+            Aux::U32(val) => val as i64,
+            Aux::Float(val) => val as i64,
+            Aux::Double(val) => val as i64,
+            _ => panic!("Unexpected Aux tag type"),
+        },
+        _ => {
             error!(
                 "Alignment of read {:?} did not have an NM aux tag",
                 record2.qname()
@@ -382,10 +398,10 @@ mod tests {
         let mut record = bam::record::Record::new();
         for i in queries {
             println!("query: {}", i);
-            sorted.read(&mut record);
+            sorted.read(&mut record).expect("").expect("");
             assert_eq!(i, str::from_utf8(record.qname()).unwrap());
         }
-        assert!(sorted.read(&mut record) == false)
+        assert!(sorted.read(&mut record) == None)
     }
 
     #[test]
@@ -411,10 +427,10 @@ mod tests {
         let mut record = bam::record::Record::new();
         for i in queries {
             println!("query: {}", i);
-            sorted.read(&mut record);
+            sorted.read(&mut record).expect("").expect("");
             assert_eq!(i, str::from_utf8(record.qname()).unwrap());
         }
-        assert!(sorted.read(&mut record) == false)
+        assert!(sorted.read(&mut record) == None)
     }
 
     #[test]
@@ -439,7 +455,7 @@ mod tests {
         let mut record = bam::record::Record::new();
         for i in queries {
             println!("query: {}", i);
-            sorted.read(&mut record);
+            sorted.read(&mut record).expect("").expect("");
             assert_eq!(i, str::from_utf8(record.qname()).unwrap());
         }
 
@@ -462,7 +478,7 @@ mod tests {
         let queries = vec!["2", "2", "3", "3"];
         for i in queries {
             println!("query: {}", i);
-            sorted.read(&mut record);
+            sorted.read(&mut record).expect("").expect("");
             assert_eq!(i, str::from_utf8(record.qname()).unwrap());
         }
 
@@ -485,7 +501,7 @@ mod tests {
         let queries = vec!["2", "2", "3", "3"];
         for i in queries {
             println!("query: {}", i);
-            sorted.read(&mut record);
+            sorted.read(&mut record).expect("").expect("");
             assert_eq!(i, str::from_utf8(record.qname()).unwrap());
         }
 
@@ -508,7 +524,7 @@ mod tests {
         let queries = vec!["1", "1", "2", "2"];
         for i in queries {
             println!("query: {}", i);
-            sorted.read(&mut record);
+            sorted.read(&mut record).expect("").expect("");
             assert_eq!(i, str::from_utf8(record.qname()).unwrap());
         }
     }
@@ -535,7 +551,7 @@ mod tests {
         let mut record = bam::record::Record::new();
         for i in queries {
             println!("query: {}", i);
-            sorted.read(&mut record);
+            sorted.read(&mut record).expect("").expect("");
             assert_eq!(i, str::from_utf8(record.qname()).unwrap());
         }
 
@@ -558,7 +574,7 @@ mod tests {
         let queries = vec!["1", "1"];
         for i in queries {
             println!("query: {}", i);
-            sorted.read(&mut record);
+            sorted.read(&mut record).expect("").expect("");
             assert_eq!(i, str::from_utf8(record.qname()).unwrap());
         }
 
@@ -581,7 +597,7 @@ mod tests {
         let queries = vec!["1", "1"];
         for i in queries {
             println!("query: {}", i);
-            sorted.read(&mut record);
+            sorted.read(&mut record).expect("").expect("");
             assert_eq!(i, str::from_utf8(record.qname()).unwrap());
         }
 
@@ -604,7 +620,7 @@ mod tests {
         let queries: Vec<&str> = vec![];
         for i in queries {
             println!("query: {}", i);
-            sorted.read(&mut record);
+            sorted.read(&mut record).expect("").expect("");
             assert_eq!(i, str::from_utf8(record.qname()).unwrap());
         }
     }
@@ -633,7 +649,7 @@ mod tests {
         let mut record = bam::record::Record::new();
         println!("query: {:?}", queries);
         for i in queries {
-            sorted.read(&mut record);
+            sorted.read(&mut record).expect("").expect("");
             assert_eq!(i, str::from_utf8(record.qname()).unwrap());
         }
     }
@@ -662,7 +678,7 @@ mod tests {
         let mut record = bam::record::Record::new();
         println!("query: {:?}", queries);
         for i in queries {
-            sorted.read(&mut record);
+            sorted.read(&mut record).expect("").expect("");
             assert_eq!(i, str::from_utf8(record.qname()).unwrap());
         }
     }
@@ -691,7 +707,7 @@ mod tests {
         let mut record = bam::record::Record::new();
         println!("query: {:?}", queries);
         for i in queries {
-            sorted.read(&mut record);
+            sorted.read(&mut record).expect("").expect("");
             assert_eq!(i, str::from_utf8(record.qname()).unwrap());
         }
     }
@@ -720,7 +736,7 @@ mod tests {
         let mut record = bam::record::Record::new();
         println!("query: {:?}", queries);
         for i in queries {
-            sorted.read(&mut record);
+            sorted.read(&mut record).expect("").expect("");
             assert_eq!(i, str::from_utf8(record.qname()).unwrap());
         }
     }
@@ -749,7 +765,7 @@ mod tests {
         assert_eq!(true, sorted.filter_pairs);
         let mut num_passing: u64 = 0;
         let mut record = bam::record::Record::new();
-        while sorted.read(&mut record) == true {
+        while sorted.read(&mut record) == Some(Ok(())) {
             num_passing += 1;
         }
         assert_eq!(11192, num_passing);

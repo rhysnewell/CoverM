@@ -2,7 +2,7 @@ use std;
 use std::process;
 
 use rust_htslib::bam;
-use rust_htslib::bam::record::Cigar;
+use rust_htslib::bam::record::{Aux, Cigar};
 
 use bam_generator::*;
 use coverage_takers::*;
@@ -15,7 +15,7 @@ pub fn contig_coverage<R: NamedBamReader, G: NamedBamReaderGenerator<R>, T: Cove
     coverage_taker: &mut T,
     coverage_estimators: &mut Vec<CoverageEstimator>,
     print_zero_coverage_contigs: bool,
-    flag_filters: FlagFilter,
+    flag_filters: &FlagFilter,
     threads: usize,
 ) -> Vec<ReadsMapped> {
     let mut reads_mapped_vector = vec![];
@@ -99,12 +99,19 @@ pub fn contig_coverage<R: NamedBamReader, G: NamedBamReaderGenerator<R>, T: Cove
             };
 
         // for record in records
-        while bam_generated.read(&mut record) == true {
+        loop {
+            match bam_generated.read(&mut record) {
+                None => {
+                    break;
+                }
+                Some(Ok(())) => {}
+                Some(e) => {
+                    panic!("Error reading BAM record: {:?}", e)
+                }
+            }
+
             trace!("Starting with a new read.. {:?}", record);
-            if (!flag_filters.include_supplementary && record.is_supplementary())
-                || (!flag_filters.include_secondary && record.is_secondary())
-                || (!flag_filters.include_improper_pairs && !record.is_proper_pair())
-            {
+            if !flag_filters.passes(&record) {
                 trace!("Skipping read based on flag filtering");
                 continue;
             }
@@ -140,7 +147,9 @@ pub fn contig_coverage<R: NamedBamReader, G: NamedBamReaderGenerator<R>, T: Cove
                     total_indels_in_current_contig = 0;
                 }
 
-                num_mapped_reads_in_current_contig += 1;
+                if !record.is_supplementary() && !record.is_secondary() {
+                    num_mapped_reads_in_current_contig += 1;
+                }
 
                 // for each chunk of the cigar string
                 trace!(
@@ -184,14 +193,23 @@ pub fn contig_coverage<R: NamedBamReader, G: NamedBamReaderGenerator<R>, T: Cove
                 // Determine the number of mismatching bases in this read by
                 // looking at the NM tag.
                 total_edit_distance_in_current_contig += match record.aux("NM".as_bytes()) {
-                    Some(aux) => aux.integer() as u64,
-                    None => {
-                        error!(
+                    Ok(aux) => match aux {
+                        Aux::I8(val) => val.abs() as u64,
+                        Aux::U8(val) => val as u64,
+                        Aux::I16(val) => val.abs() as u64,
+                        Aux::U16(val) => val as u64,
+                        Aux::I32(val) => val.abs() as u64,
+                        Aux::U32(val) => val as u64,
+                        Aux::Float(val) => val.abs() as u64,
+                        Aux::Double(val) => val.abs() as u64,
+                        _ => panic!("Unexpected Aux tag type"),
+                    },
+                    _ => {
+                        panic!(
                             "Mapping record encountered that does not have an 'NM' \
                                     auxiliary tag in the SAM/BAM format. This is required \
                                     to work out some coverage statistics"
                         );
-                        process::exit(1);
                     }
                 };
 
@@ -266,8 +284,9 @@ mod tests {
     use genome_exclusion::*;
     use mapping_parameters::*;
     use shard_bam_reader::*;
-    use std::io::Cursor;
+    use std::io::Read;
     use std::str;
+    use OutputWriter;
 
     fn test_with_stream<R: NamedBamReader, G: NamedBamReaderGenerator<R>>(
         expected: &str,
@@ -276,7 +295,9 @@ mod tests {
         print_zero_coverage_contigs: bool,
         proper_pairs_only: bool,
     ) -> Vec<ReadsMapped> {
-        let mut stream = Cursor::new(Vec::new());
+        let tf: tempfile::NamedTempFile = tempfile::NamedTempFile::new().unwrap();
+        let t = tf.path().to_str().unwrap();
+
         let flag_filters = FlagFilter {
             include_improper_pairs: !proper_pairs_only,
             include_secondary: false,
@@ -286,18 +307,23 @@ mod tests {
         {
             let mut coverage_taker =
                 CoverageTakerType::new_single_float_coverage_streaming_coverage_printer(
-                    &mut stream,
+                    OutputWriter::generate(Some(t)),
                 );
             reads_mapped_vec = contig_coverage(
                 bam_readers,
                 &mut coverage_taker,
                 coverage_estimators,
                 print_zero_coverage_contigs,
-                flag_filters,
+                &flag_filters,
                 1,
             );
         }
-        assert_eq!(expected, str::from_utf8(stream.get_ref()).unwrap());
+        let mut buf = vec![];
+        std::fs::File::open(tf.path())
+            .unwrap()
+            .read_to_end(&mut buf)
+            .unwrap();
+        assert_eq!(expected, str::from_utf8(&buf).unwrap());
         return reads_mapped_vec;
     }
 

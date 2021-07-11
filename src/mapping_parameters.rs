@@ -26,7 +26,7 @@ impl<'a> MappingParameters<'a> {
         m: &'a clap::ArgMatches,
         mapping_program: MappingProgram,
         reference_tempfile: &'a Option<NamedTempFile>,
-        references: &'a Option<Vec<&'a str>>,
+        _references: &'a Option<Vec<&'a str>>,
     ) -> MappingParameters<'a> {
         let mut read1: Vec<&str> = vec![];
         let mut read2: Vec<&str> = vec![];
@@ -118,9 +118,16 @@ impl<'a> MappingParameters<'a> {
         return MappingParameters {
             references: match reference_tempfile {
                 Some(r) => vec![r.path().to_str().unwrap()],
-                None => match references {
-                    Some(reference_vec) => reference_vec.clone(),
-                    None => m.values_of("reference").unwrap().collect(),
+                None => match m.values_of("reference") {
+                    Some(refs) => refs
+                        .collect::<Vec<_>>()
+                        .into_iter()
+                        .map(|r| {
+                            check_reference_file(r);
+                            r
+                        })
+                        .collect(),
+                    None => vec![],
                 },
             },
             threads: m
@@ -259,6 +266,21 @@ impl<'a> MappingParameters<'a> {
             to_return.push((&s, None))
         }
         return to_return;
+    }
+}
+
+pub fn check_reference_file(reference_path: &str) {
+    let ref_path = std::path::Path::new(reference_path);
+    if !ref_path.exists() {
+        panic!(
+            "The reference specified '{}' does not appear to exist",
+            &reference_path
+        );
+    } else if !ref_path.is_file() {
+        panic!(
+            "The reference specified '{}' should be a file, not e.g. a directory",
+            &reference_path
+        );
     }
 }
 
